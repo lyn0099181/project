@@ -1,1 +1,2563 @@
-abc
+<?php
+namespace Api\Controller; 
+use Think\Controller;
+use Think\Upload;
+use Think\Image;
+
+
+/**
+ * AI勘手机端接口
+ */
+class NewaikanApiController extends Controller{
+	private $_accessKey='ai.cnfsdata.com88';
+	private $_requestData;
+	private $_apiList=array('addZZ','editZZ','addBG','editBG','addSY','editSY','addGY','editGY','uploadImg','submitSurveyItem','Essential','Eaves','Cell','addZZnew');//不进行全参数签名验证,只针对业务编码进行签名验证的接口
+	private $_noCheck_apiList=array('getVersion');
+	
+	
+	
+	protected function _initialize(){
+	    
+	    /* $this->_requestData=array('username'=>666,'password'=>666,'usertype'=>'assess');  
+	    ksort($this->_requestData);
+	    $signStr=join('|',$this->_requestData);
+	    $sign=md5($signStr.'|'.$this->_accessKey);
+	    var_dump($signStr,$sign);die; */
+		if(!in_array(ACTION_NAME, $this->_noCheck_apiList)){
+			$this->checkRequest();
+		}
+	}
+	
+	/**
+	 * 检查请求来源合法性
+	 */
+	protected function checkRequest(){
+//  	    dump(I('post.'));die();
+		$this->_requestData=I('post.');
+		$signature=$this->_requestData['signature'];
+		
+ 		unset($this->_requestData['signature']);
+		if(in_array(ACTION_NAME, $this->_apiList)){
+			$sign=md5($this->_requestData['unique_code'].'|'.$this->_accessKey);
+		}else{
+			ksort($this->_requestData);
+			$signStr=join('|',$this->_requestData);
+			$sign=md5($signStr.'|'.$this->_accessKey);
+			
+		}
+		//验证签名
+		if($sign!=$signature){
+			$res=array(
+				'success'=>false,
+			    'data'=>I('post.'),
+				//'data'=>'验证签名错误',
+			);
+			echo json_encode($res);exit;
+		}
+	}
+	
+	public function getVersion(){
+		$version=require_once './Apk/download/version.php';
+		$this->ajaxReturn($version);
+	}
+	/**
+	 * 登录测试接口
+	 */
+	public function logintest(){
+	    //接口所需参数
+	    $paramArr=array(
+	        'usertype'=>'',//用户类型,评估机构:assess;银行:bank
+	        'username'=>'',//用户
+	        'password'=>'',//密码
+	    );
+	    $this->getParams($paramArr);
+	    $paramArr["password"]=md5($paramArr["password"]);
+	    switch($paramArr['usertype']){
+	        case 'assess':
+	            $table='AssessUser';
+	            $roleTable='ai_assess_role';
+	            $role=array('admin','survey_user');
+	            $role='\''.join('\',\'',$role).'\'';
+	            break;
+	        case 'bank':
+	            $table='BankUser';
+	            $roleTable='ai_bank_role';
+	            $role=array('super_admin','admin','oper_user');
+	            $role='\''.join('\',\'',$role).'\'';
+	            break;
+	        case 'oper':
+	            $table='BankUser';
+	            $roleTable='ai_bank_role';
+	            $role=array('super_admin','admin','oper_user');
+	            $role='\''.join('\',\'',$role).'\'';
+	            	break;
+	    }
+	
+	        if($re=M($table)->alias('user')->join("LEFT JOIN {$roleTable} `role` ON `user`.`role_id`=`role`.`id`")->where('user_name="%s" AND password="%s" AND eName IN('.$role.')',$paramArr["username"],$paramArr["password"])->field('`user`.`id`')->find()){
+	            $res=array(
+	                'success'=>true,
+    				'data'=>array(
+    					'userId'=>intval($re['id']),
+    				),
+	                'msg'=>'登录成功',
+	            );
+	        }else{
+	            $res=array(
+	               'success'=>false,
+    			   'data'=>array(
+    					'userId'=>0,
+    				),
+	               'msg'=>'帐号或密码错误',
+	            );
+	        }
+// 	    dump($res);die();
+	    echo json_encode($res);exit;
+	}
+	
+	
+	/**
+	 * 登录接口
+	 */
+	public function login(){
+// 	    echo 111;die();
+		//接口所需参数
+		$paramArr=array(
+			'usertype'=>'',//用户类型,评估机构:assess;银行:bank
+			'username'=>'',//用户
+			'password'=>'',//密码
+			'verify'=>'',//验证码
+		);
+		$this->getParams($paramArr);
+		//var_dump($paramArr);die;
+		$paramArr["password"]=md5($paramArr["password"]);
+		switch($paramArr['usertype']){
+			case 'assess':
+				$table='AssessUser';
+				$roleTable='ai_assess_role';
+				$role=array('admin','survey_user');
+				$role='\''.join('\',\'',$role).'\'';
+				break;
+			case 'bank':
+				$table='BankUser';
+				$roleTable='ai_bank_role';
+				$role=array('super_admin','admin','oper_user');
+				$role='\''.join('\',\'',$role).'\'';
+				break;
+		}
+		$model=M();
+		$sql = "select * from ai_verify_code where user_name='{$paramArr['username']}' and type='{$paramArr['usertype']}' ";
+		$dataList = $model->query($sql);
+		if($paramArr['verify']!=$dataList[0]['verCode']){
+		    $res=array(
+		        'success'=>false,
+		        "msg"=>"verify is false",
+    			'data'=>array(),
+		    );
+		    
+		}else {
+		
+    		if($re=M($table)->alias('user')->join("LEFT JOIN {$roleTable} `role` ON `user`.`role_id`=`role`.`id`")->where('user_name="%s" AND password="%s" AND eName IN('.$role.')',$paramArr["username"],$paramArr["password"])->field('`user`.`id`')->find()){
+    			$res=array(
+    				'success'=>true,
+    			    'msg'=>'',
+    				'data'=>array(
+    					'userId'=>$re['id'],
+    				),
+    			);
+    		}else{
+    			$res=array(
+    				'success'=>false,
+    			    "msg"=>"password is false",
+    				'data'=>array(),
+    			);
+    		}
+		}
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 获取待勘察任务(列表)
+	 */
+	public function getTask(){
+		//接口所需参数
+		$paramArr=array(
+			'usertype'=>'',//用户类型
+			'userId'=>'',//勘察人员用户id
+		);
+		$this->getParams($paramArr);
+		switch ($paramArr['usertype']){
+			case 'assess':
+				$status='30';//待勘察任务
+				$userInfo=$this->getUserInfoById($paramArr['userId']);
+				if($userInfo['eName']=='admin'){
+					$where="`task`.`assess_id`={$userInfo['assess_id']} AND `task`.`status`='{$status}' AND `build`.`id` IS NULL";
+				}else{
+					$where="`task`.`survey_userId`={$paramArr['userId']} AND `task`.`status`='{$status}' AND `build`.`id` IS NULL";
+				}
+				$sql1="SELECT `task`.`buzCode`,`task`.`surveyCode`,`task`.`pub_time`,`loan`.`proj_name`,`loan`.`province`,`loan`.`city`,`loan`.`district`,`loan`.`cell_name`,`loan`.`location`,`loan`.`usage`,`user`.`user_type`,`user`.`contacts`,`user`.`mobile`,`user`.`org_name`,`user`.`name`,`user`.`tel`,`bank`.`bank_name`,IF(`build`.`id`,1,0) `flag` FROM `ai_task` `task` LEFT JOIN `ai_loan_info` `loan` ON `task`.`buzCode_1st`=`loan`.`buzCode` LEFT JOIN `ai_building_base_info` `build` ON `task`.`buzCode`=`build`.`unique_code` LEFT JOIN `ai_user` `user` ON `loan`.`user_id`=`user`.`id` LEFT JOIN `ai_bank_admin` `bank` ON `task`.`bank_id`=`bank`.`id` WHERE {$where} ORDER BY `task`.`pub_time` DESC";
+				$list=M()->query($sql1);
+				$undoTask=array();
+				foreach($list as $k=>$v){
+					$undoTask[$k]['buzCode']=$v['buzCode'];
+					$undoTask[$k]['surveyCode']=$v['surveyCode'];
+					$undoTask[$k]['proj_name']=$v['proj_name'];
+					$undoTask[$k]['province']=$v['province'];
+					$undoTask[$k]['city']=$v['city'];
+					$undoTask[$k]['district']=$v['district'];
+					$undoTask[$k]['cell_name']=$v['cell_name'];
+					$undoTask[$k]['location']=$v['location'];
+					$undoTask[$k]['usage']=$v['usage'];
+					$undoTask[$k]['contacts']=$v['user_type']==1?$v['name']:$v['contacts'];
+					$undoTask[$k]['mobile']=$v['user_type']==1?$v['tel']:$v['mobile'];
+					$undoTask[$k]['bankname']=$v['bankname'];
+					$undoTask[$k]['pubtime']=$v['pub_time'];
+					//建筑信息是否上传
+					$undoTask[$k]['Dflag']=$v['flag'];
+					//图片是否上传
+					$re=$this->getPictureInfo($v['buzCode']);
+					$undoTask[$k]['Pflag']=$re===TRUE?1:0;
+				}
+				break;
+			case 'bank':
+				$status='31';//待勘察任务(内部重估任务)
+				$userInfo=$this->getBankUserInfoById($paramArr['userId']);
+				if(in_array($userInfo['eName'], array('admin','super_admin'))){
+					$where="`task`.`bank_id`={$userInfo['bank_id']} AND `task`.`buz_type`=2 AND `task`.`status`='{$status}' AND `build`.`id` IS NULL";
+				}else{
+					$where="`task`.`survey_userId`={$paramArr['userId']} AND `task`.`buz_type`=2 AND `task`.`status`='{$status}' AND `build`.`id` IS NULL";
+				}
+				$sql1="SELECT `task`.`re_buzCode`,`task`.`surveyCode`,`task`.`pub_time`,`loan`.`proj_name`,`loan`.`province`,`loan`.`city`,`loan`.`district`,`loan`.`cell_name`,`loan`.`location`,`loan`.`usage`,`user`.`user_type`,`user`.`contacts`,`user`.`mobile`,`user`.`org_name`,`user`.`name`,`user`.`tel`,`bank`.`bank_name`,IF(`build`.`id`,1,0) `flag` FROM `ai_reval_task` `task` LEFT JOIN `ai_loan_info` `loan` ON `task`.`buzCode`=`loan`.`buzCode` LEFT JOIN `ai_building_base_info` `build` ON `task`.`re_buzCode`=`build`.`unique_code` LEFT JOIN `ai_user` `user` ON `loan`.`user_id`=`user`.`id` LEFT JOIN `ai_bank_admin` `bank` ON `task`.`bank_id`=`bank`.`id` WHERE {$where} ORDER BY `task`.`pub_time` DESC";
+				$list=M()->query($sql1);
+				$undoTask=array();
+				foreach($list as $k=>$v){
+					$undoTask[$k]['buzCode']=$v['re_buzCode'];//重估编号
+					$undoTask[$k]['surveyCode']=$v['surveyCode'];
+					$undoTask[$k]['proj_name']=$v['proj_name'];
+					$undoTask[$k]['province']=$v['province'];
+					$undoTask[$k]['city']=$v['city'];
+					$undoTask[$k]['district']=$v['district'];
+					$undoTask[$k]['cell_name']=$v['cell_name'];
+					$undoTask[$k]['location']=$v['location'];
+					$undoTask[$k]['usage']=$v['usage'];
+					$undoTask[$k]['contacts']=$v['user_type']==1?$v['name']:$v['contacts'];
+					$undoTask[$k]['mobile']=$v['user_type']==1?$v['tel']:$v['mobile'];
+					$undoTask[$k]['bankname']=$v['bankname'];
+					$undoTask[$k]['pubtime']=$v['pub_time'];
+					//建筑信息是否上传
+					$undoTask[$k]['Dflag']=$v['flag'];
+					//图片是否上传
+					$re=$this->getPictureInfo($v['re_buzCode']);
+					$undoTask[$k]['Pflag']=$re===TRUE?1:0;
+				}
+				break;
+				case 'oper':
+					$status='30';//待勘察任务
+					$userInfo=$this->getUserInfoById($paramArr['userId']);
+					if($userInfo['eName']=='admin'){
+						$where="`task`.`assess_id`={$userInfo['assess_id']} AND `task`.`status`='{$status}' AND `build`.`id` IS NULL";
+					}else{
+						$where="`task`.`survey_userId`={$paramArr['userId']} AND `task`.`status`='{$status}' AND `build`.`id` IS NULL";
+					}
+					$sql1="SELECT `task`.`buzCode`,`task`.`surveyCode`,`task`.`pub_time`,`loan`.`proj_name`,`loan`.`province`,`loan`.`city`,`loan`.`district`,`loan`.`cell_name`,`loan`.`location`,`loan`.`usage`,`user`.`user_type`,`user`.`contacts`,`user`.`mobile`,`user`.`org_name`,`user`.`name`,`user`.`tel`,`bank`.`bank_name`,IF(`build`.`id`,1,0) `flag` FROM `ai_task` `task` LEFT JOIN `ai_loan_info` `loan` ON `task`.`buzCode_1st`=`loan`.`buzCode` LEFT JOIN `ai_building_base_info` `build` ON `task`.`buzCode`=`build`.`unique_code` LEFT JOIN `ai_user` `user` ON `loan`.`user_id`=`user`.`id` LEFT JOIN `ai_bank_admin` `bank` ON `task`.`bank_id`=`bank`.`id` WHERE {$where} ORDER BY `task`.`pub_time` DESC";
+					$list=M()->query($sql1);
+					$undoTask=array();
+					foreach($list as $k=>$v){
+						$undoTask[$k]['buzCode']=$v['buzCode'];
+						$undoTask[$k]['surveyCode']=$v['surveyCode'];
+						$undoTask[$k]['proj_name']=$v['proj_name'];
+						$undoTask[$k]['province']=$v['province'];
+						$undoTask[$k]['city']=$v['city'];
+						$undoTask[$k]['district']=$v['district'];
+						$undoTask[$k]['cell_name']=$v['cell_name'];
+						$undoTask[$k]['location']=$v['location'];
+						$undoTask[$k]['usage']=$v['usage'];
+						$undoTask[$k]['contacts']=$v['user_type']==1?$v['name']:$v['contacts'];
+						$undoTask[$k]['mobile']=$v['user_type']==1?$v['tel']:$v['mobile'];
+						$undoTask[$k]['bankname']=$v['bankname'];
+						$undoTask[$k]['pubtime']=$v['pub_time'];
+						//建筑信息是否上传
+						$undoTask[$k]['Dflag']=$v['flag'];
+						//图片是否上传
+						$re=$this->getPictureInfo($v['buzCode']);
+						$undoTask[$k]['Pflag']=$re===TRUE?1:0;
+					}
+					break;
+		}
+		
+		$res=array(
+			'success'=>true,
+			'data'=>$undoTask,
+		);
+		echo json_encode($res);exit;
+	}
+
+	/**
+	 * 获取待提交任务(列表)
+	 */
+	public function getSubmitTask(){
+		//接口所需参数
+		$paramArr=array(
+			'usertype'=>'',//用户类型
+			'userId'=>'',//勘察人员用户id
+		);
+		$this->getParams($paramArr);
+	switch ($paramArr['usertype']){
+			case 'assess':
+				$status='30';//待提交勘察任务
+				$userInfo=$this->getUserInfoById($paramArr['userId']);
+				if($userInfo['eName']=='admin'){
+					$where="`task`.`assess_id`={$userInfo['assess_id']} AND `task`.`status`='{$status}' AND `build`.`id` IS NOT NULL";
+				}else{
+					$where="`task`.`survey_userId`={$paramArr['userId']} AND `task`.`status`='{$status}' AND `build`.`id` IS NOT NULL";
+				}
+				$sql1="SELECT `task`.`buzCode`,`task`.`surveyCode`,`task`.`pub_time`,`loan`.`proj_name`,`loan`.`province`,`loan`.`city`,`loan`.`district`,`loan`.`cell_name`,`loan`.`location`,`loan`.`usage`,`user`.`user_type`,`user`.`contacts`,`user`.`mobile`,`user`.`org_name`,`user`.`name`,`user`.`tel`,`bank`.`bank_name`,IF(`build`.`id`,1,0) `flag` FROM `ai_task` `task` LEFT JOIN `ai_loan_info` `loan` ON `task`.`buzCode_1st`=`loan`.`buzCode` LEFT JOIN `ai_building_base_info` `build` ON `task`.`buzCode`=`build`.`unique_code` LEFT JOIN `ai_user` `user` ON `loan`.`user_id`=`user`.`id` LEFT JOIN `ai_bank_admin` `bank` ON `task`.`bank_id`=`bank`.`id` WHERE {$where} ORDER BY `task`.`pub_time` DESC";
+				$list=M()->query($sql1);
+				$submitTask=array();
+				foreach($list as $k=>$v){
+					$submitTask[$k]['buzCode']=$v['buzCode'];
+					$submitTask[$k]['surveyCode']=$v['surveyCode'];
+					$submitTask[$k]['proj_name']=$v['proj_name'];
+					$submitTask[$k]['province']=$v['province'];
+					$submitTask[$k]['city']=$v['city'];
+					$submitTask[$k]['district']=$v['district'];
+					$submitTask[$k]['cell_name']=$v['cell_name'];
+					$submitTask[$k]['location']=$v['location'];
+					$submitTask[$k]['usage']=$v['usage'];
+					$submitTask[$k]['contacts']=$v['user_type']==1?$v['name']:$v['contacts'];
+					$submitTask[$k]['mobile']=$v['user_type']==1?$v['tel']:$v['mobile'];
+					$submitTask[$k]['bankname']=$v['bankname'];
+					$submitTask[$k]['pubtime']=$v['pub_time'];
+					//建筑信息是否上传
+					$submitTask[$k]['Dflag']=$v['flag'];
+					//图片是否上传
+					$re=$this->getPictureInfo($v['buzCode']);
+					$submitTask[$k]['Pflag']=$re===TRUE?1:0;
+				}
+				break;
+			case 'bank':
+				$status='31';//待提交勘察任务(内部重估任务)
+				$userInfo=$this->getBankUserInfoById($paramArr['userId']);
+				if(in_array($userInfo['eName'], array('admin','super_admin'))){
+					$where="`task`.`bank_id`={$userInfo['bank_id']} AND `task`.`buz_type`=2 AND `task`.`status`='{$status}' AND `build`.`id` IS NOT NULL";
+				}else{
+					$where="`task`.`survey_userId`={$paramArr['userId']} AND `task`.`buz_type`=2 AND `task`.`status`='{$status}' AND `build`.`id` IS NOT NULL";
+				}
+				$sql1="SELECT `task`.`re_buzCode`,`task`.`surveyCode`,`task`.`pub_time`,`loan`.`proj_name`,`loan`.`province`,`loan`.`city`,`loan`.`district`,`loan`.`cell_name`,`loan`.`location`,`loan`.`usage`,`user`.`user_type`,`user`.`contacts`,`user`.`mobile`,`user`.`org_name`,`user`.`name`,`user`.`tel`,`bank`.`bank_name`,IF(`build`.`id`,1,0) `flag` FROM `ai_reval_task` `task` LEFT JOIN `ai_loan_info` `loan` ON `task`.`buzCode`=`loan`.`buzCode` LEFT JOIN `ai_building_base_info` `build` ON `task`.`re_buzCode`=`build`.`unique_code` LEFT JOIN `ai_user` `user` ON `loan`.`user_id`=`user`.`id` LEFT JOIN `ai_bank_admin` `bank` ON `task`.`bank_id`=`bank`.`id` WHERE {$where} ORDER BY `task`.`pub_time` DESC";
+				$list=M()->query($sql1);
+				$submitTask=array();
+				foreach($list as $k=>$v){
+					$submitTask[$k]['buzCode']=$v['re_buzCode'];//重估编号
+					$submitTask[$k]['surveyCode']=$v['surveyCode'];
+					$submitTask[$k]['proj_name']=$v['proj_name'];
+					$submitTask[$k]['province']=$v['province'];
+					$submitTask[$k]['city']=$v['city'];
+					$submitTask[$k]['district']=$v['district'];
+					$submitTask[$k]['cell_name']=$v['cell_name'];
+					$submitTask[$k]['location']=$v['location'];
+					$submitTask[$k]['usage']=$v['usage'];
+					$submitTask[$k]['contacts']=$v['user_type']==1?$v['name']:$v['contacts'];
+					$submitTask[$k]['mobile']=$v['user_type']==1?$v['tel']:$v['mobile'];
+					$submitTask[$k]['bankname']=$v['bankname'];
+					$submitTask[$k]['pubtime']=$v['pub_time'];
+					//建筑信息是否上传
+					$submitTask[$k]['Dflag']=$v['flag'];
+					//图片是否上传
+					$re=$this->getPictureInfo($v['re_buzCode']);
+					$submitTask[$k]['Pflag']=$re===TRUE?1:0;
+				}
+				break;
+				case 'oper':
+					$status='18';//待提交勘察任务
+					$userInfo=$this->getUserInfoById($paramArr['userId']);
+					if($userInfo['eName']=='admin'){
+						$where="`task`.`assess_id`={$userInfo['assess_id']} AND `task`.`status`='{$status}' AND `build`.`id` IS NOT NULL";
+					}else{
+						$where="`task`.`survey_userId`={$paramArr['userId']} AND `task`.`status`='{$status}' AND `build`.`id` IS NOT NULL";
+					}
+					$sql1="SELECT `task`.`buzCode`,`task`.`surveyCode`,`task`.`pub_time`,`loan`.`proj_name`,`loan`.`province`,`loan`.`city`,`loan`.`district`,`loan`.`cell_name`,`loan`.`location`,`loan`.`usage`,`user`.`user_type`,`user`.`contacts`,`user`.`mobile`,`user`.`org_name`,`user`.`name`,`user`.`tel`,`bank`.`bank_name`,IF(`build`.`id`,1,0) `flag` FROM `ai_bank_task` `task` LEFT JOIN `ai_loan_info` `loan` ON `task`.`buzCode_1st`=`loan`.`buzCode` LEFT JOIN `ai_building_base_info` `build` ON `task`.`buzCode`=`build`.`unique_code` LEFT JOIN `ai_user` `user` ON `loan`.`user_id`=`user`.`id` LEFT JOIN `ai_bank_admin` `bank` ON `task`.`bank_id`=`bank`.`id` WHERE {$where} ORDER BY `task`.`pub_time` DESC";
+					$list=M()->query($sql1);
+					$submitTask=array();
+					foreach($list as $k=>$v){
+						$submitTask[$k]['buzCode']=$v['buzCode'];
+						$submitTask[$k]['surveyCode']=$v['surveyCode'];
+						$submitTask[$k]['proj_name']=$v['proj_name'];
+						$submitTask[$k]['province']=$v['province'];
+						$submitTask[$k]['city']=$v['city'];
+						$submitTask[$k]['district']=$v['district'];
+						$submitTask[$k]['cell_name']=$v['cell_name'];
+						$submitTask[$k]['location']=$v['location'];
+						$submitTask[$k]['usage']=$v['usage'];
+						$submitTask[$k]['contacts']=$v['user_type']==1?$v['name']:$v['contacts'];
+						$submitTask[$k]['mobile']=$v['user_type']==1?$v['tel']:$v['mobile'];
+						$submitTask[$k]['bankname']=$v['bankname'];
+						$submitTask[$k]['pubtime']=$v['pub_time'];
+						//建筑信息是否上传
+						$submitTask[$k]['Dflag']=$v['flag'];
+						//图片是否上传
+						$re=$this->getPictureInfo($v['buzCode']);
+						$submitTask[$k]['Pflag']=$re===TRUE?1:0;
+					}
+					break;
+		}
+		
+		$res=array(
+			'success'=>true,
+			'data'=>$submitTask,
+		);
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 获取已完成勘察任务(列表)
+	 */
+	public function getCompleteTask(){
+		//接口所需参数
+		$paramArr=array(
+			'usertype'=>'',//用户类型
+			'userId'=>'',//勘察人员用户id
+		);
+		$this->getParams($paramArr);
+		switch ($paramArr['usertype']){
+			case 'assess':
+				$status="('31','32','33','39')";//已勘察任务
+				$userInfo=$this->getUserInfoById($paramArr['userId']);
+				if($userInfo['eName']=='admin'){
+					$where="`task`.`assess_id`={$userInfo['assess_id']} AND `task`.`status`IN{$status}";
+				}else{
+					$where="`task`.`survey_userId`={$paramArr['userId']} AND `task`.`status`IN{$status}";
+				}
+				$sql2="SELECT `task`.`buzCode`,`task`.`surveyCode`,`task`.`pub_time`,`task`.`survey_time`,`loan`.`proj_name`,`loan`.`province`,`loan`.`city`,`loan`.`district`,`loan`.`cell_name`,`loan`.`location`,`loan`.`usage`,`user`.`user_type`,`user`.`contacts`,`user`.`mobile`,`user`.`org_name`,`user`.`name`,`user`.`tel`,`bank`.`bank_name` FROM `ai_task` `task` LEFT JOIN `ai_loan_info` `loan` ON `task`.`buzCode_1st`=`loan`.`buzCode` LEFT JOIN `ai_user` `user` ON `loan`.`user_id`=`user`.`id` LEFT JOIN `ai_bank_admin` `bank` ON `task`.`bank_id`=`bank`.`id` WHERE {$where} ORDER BY `task`.`survey_time` DESC";
+				$list=M()->query($sql2);
+				$doneTask=array();
+				foreach($list as $k=>$v){
+					$doneTask[$k]['buzCode']=$v['buzCode'];
+					$doneTask[$k]['surveyCode']=$v['surveyCode'];
+					$doneTask[$k]['proj_name']=$v['proj_name'];
+					$doneTask[$k]['province']=$v['province'];
+					$doneTask[$k]['city']=$v['city'];
+					$doneTask[$k]['district']=$v['district'];
+					$doneTask[$k]['cell_name']=$v['cell_name'];
+					$doneTask[$k]['location']=$v['location'];
+					$doneTask[$k]['usage']=$v['usage'];
+					$doneTask[$k]['contacts']=$v['user_type']==1?$v['name']:$v['contacts'];
+					$doneTask[$k]['mobile']=$v['user_type']==1?$v['tel']:$v['mobile'];
+					$doneTask[$k]['bankname']=$v['bankname'];
+					$doneTask[$k]['pubtime']=$v['pub_time'];
+					$doneTask[$k]['surveytime']=$v['survey_time'];
+				}
+				break;
+			case 'bank':
+				$status="('32','39')";//已勘察任务(重估任务)
+				$userInfo=$this->getBankUserInfoById($paramArr['userId']);
+				if(in_array($userInfo['eName'], array('admin','super_admin'))){
+					$where="`task`.`bank_id`={$userInfo['bank_id']} AND `task`.`buz_type`=2 AND `task`.`status`IN{$status}";
+				}else{
+					$where="`task`.`survey_userId`={$paramArr['userId']} AND `task`.`buz_type`=2 AND `task`.`status`IN{$status}";
+				}
+				$sql2="SELECT `task`.`re_buzCode`,`task`.`pub_time`,`task`.`survey_time`,`loan`.`proj_name`,`loan`.`province`,`loan`.`city`,`loan`.`district`,`loan`.`cell_name`,`loan`.`location`,`loan`.`usage`,`user`.`user_type`,`user`.`contacts`,`user`.`mobile`,`user`.`org_name`,`user`.`name`,`user`.`tel`,`bank`.`bank_name` FROM `ai_reval_task` `task` LEFT JOIN `ai_loan_info` `loan` ON `task`.`buzCode`=`loan`.`buzCode` LEFT JOIN `ai_user` `user` ON `loan`.`user_id`=`user`.`id` LEFT JOIN `ai_bank_admin` `bank` ON `task`.`bank_id`=`bank`.`id` WHERE {$where} ORDER BY `task`.`survey_time` DESC";
+				$list=M()->query($sql2);
+				$doneTask=array();
+				foreach($list as $k=>$v){
+					$doneTask[$k]['buzCode']=$v['re_buzCode'];
+					$doneTask[$k]['surveyCode']='';
+					$doneTask[$k]['proj_name']=$v['proj_name'];
+					$doneTask[$k]['province']=$v['province'];
+					$doneTask[$k]['city']=$v['city'];
+					$doneTask[$k]['district']=$v['district'];
+					$doneTask[$k]['cell_name']=$v['cell_name'];
+					$doneTask[$k]['location']=$v['location'];
+					$doneTask[$k]['usage']=$v['usage'];
+					$doneTask[$k]['contacts']=$v['user_type']==1?$v['name']:$v['contacts'];
+					$doneTask[$k]['mobile']=$v['user_type']==1?$v['tel']:$v['mobile'];
+					$doneTask[$k]['bankname']=$v['bankname'];
+					$doneTask[$k]['pubtime']=$v['pub_time'];
+					$doneTask[$k]['surveytime']=$v['survey_time'];
+				}
+				break;
+		}
+	
+		$res=array(
+			'success'=>true,
+			'data'=>$doneTask,
+		);
+		echo json_encode($res);exit;
+	}
+
+	//基本信息勘察
+	public function Essential(){
+		//接口所需全部参数
+		$paramArr=array(
+			'surveyCode'=>'',//勘察编号
+			'unique_code'=>'',
+			'location'=>'',//楼栋号
+			'area'=>'',//面积
+			'storey_height'=>'',//层高
+			'building_type'=>'',//建筑类型
+			'service_condition'=>'',//维护状况
+			'floors_underground'=>'',//地上层数
+			'floors_overground'=>'',//地下层数
+			'floor_no'=>'',//所在层
+			'real_usage'=>'',//房屋实际用途
+			'frontage'=>'',//临街
+			'build_year'=>'',//建筑年代
+			'addition_building'=>'',//其他
+		);
+		//接口所需全部参数-重估
+		$paramArr_R=array(
+			'surveyCode'=>'',//勘察编号
+			'unique_code'=>'',
+			'location'=>'',//楼栋号
+			'area'=>'',
+			'storey_height'=>'',
+			'building_type'=>'',
+			'service_condition'=>'',
+			'floors_underground'=>'',
+			'floors_overground'=>'',
+			'floor_no'=>'',
+			'real_usage'=>'',
+			'frontage'=>'',
+			'build_year'=>'',
+			'addition_building'=>'',
+		);
+		//接口可选参数
+		$paramArr2=array(
+			'addition_building'=>'',
+			'addition_living'=>'',
+			'addition_facility'=>'',
+		);
+		//接口必选参数
+		if($this->_requestData['usertype']=='bank' && preg_match('/^R/', $this->_requestData['unique_code'])){
+			//重估
+			$reqParams=array_diff_key($paramArr_R, $paramArr2);
+			//检查必选参数
+			$this->checkReqParams($reqParams);
+			//获取数据
+			$this->getParams($paramArr_R);
+		}else{
+			$reqParams=array_diff_key($paramArr, $paramArr2);
+			//检查必选参数
+			$this->checkReqParams($reqParams);
+			//获取数据
+			$this->getParams($paramArr);
+		}
+		$model=M();
+		//生成基本信息表数据
+		$baseData=array();
+		if($this->_requestData['usertype']=='bank' && preg_match('/^R/', $this->_requestData['unique_code'])){
+			//重估,首次勘察信息
+			$surveyInfo=M('RevalTask')->alias('rtask')->join('LEFT JOIN `ai_building_base_info` `base` ON `rtask`.`buzCode`=`base`.`unique_code`')->join('LEFT JOIN `ai_building_profile_zz` `zz` ON `base`.`unique_code`=`zz`.`unique_code`')->where('`rtask`.re_buzCode=\''.$this->_requestData['unique_code'].'\'')->field('base.*,zz.*')->find();
+			//固有信息留用首次勘察结果
+			$paramArr_1st=array(
+				//info_base
+				'province'=>$surveyInfo['province'],
+				'city'=>$surveyInfo['city'],
+				'district'=>$surveyInfo['district'],
+				'usage'=>$surveyInfo['usage'],
+				'area'=>$surveyInfo['area'],
+				//info_ZZ
+				'storey_height'=>$surveyInfo['storey_height'],
+				'building_type'=>$surveyInfo['building_type'],
+				'floors_underground'=>$surveyInfo['floors_underground'],
+				'floors_overground'=>$surveyInfo['floors_overground'],
+				'floor_no'=>$surveyInfo['floor_no'],
+				'build_year'=>$surveyInfo['build_year'],
+				'addition_building'=>$surveyInfo['addition_building'],
+				'structure'=>$surveyInfo['structure'],
+				'room'=>$surveyInfo['room'],
+				'hall'=>$surveyInfo['hall'],
+				'toilet'=>$surveyInfo['toilet'],
+				'kitchen'=>$surveyInfo['kitchen'],
+				'orientation'=>$surveyInfo['orientation'],
+				'veranda_num'=>$surveyInfo['veranda_num'],
+				'semi_num'=>$surveyInfo['semi_num'],
+				'sealing_num'=>$surveyInfo['sealing_num'],
+			);
+			//
+			$baseData['location']=$surveyInfo['location'];
+			//将重估勘察信息重新赋值
+			$paramArr=array_merge($paramArr_1st,$paramArr_R);
+			//重估不更新楼栋号
+			$isUpdate=false;
+		}else{
+			$loanInfo=M('LoanInfo')->where('buzCode=\''.$this->_requestData['unique_code'].'\'')->find();
+			//
+			$baseData['location']=$loanInfo['cell_name'].$paramArr['location'];
+			//合并loaninfo信息
+			$paramArr['province']=$loanInfo['province'];
+			$paramArr['city']=$loanInfo['city'];
+			$paramArr['district']=$loanInfo['district'];
+			$paramArr['usage']=$loanInfo['usage'];
+			//是否更新楼栋号
+			$isUpdate=$loanInfo['location']==$paramArr['location']?false:true;
+		}
+		//基本信息
+		$baseData['surveyCode']=$paramArr['surveyCode'];
+		$baseData['unique_code']=$paramArr['unique_code'];
+		$baseData['province']=$paramArr['province'];
+		$baseData['city']=$paramArr['city'];
+		$baseData['district']=$paramArr['district'];
+		$baseData['usage']=$paramArr['usage'];
+		$baseData['area']=$paramArr['area'];
+		//生成住宅信息表数据
+		$extData=array_diff_key($paramArr, $baseData);
+		unset($extData['jsonData']);
+		unset($extData['location']);
+		$extData['unique_code']=$paramArr['unique_code'];
+		$re1=$model->table('ai_building_base_info')->data($baseData)->add();
+		$re2=$model->table('ai_building_profile_zz')->data($extData)->add();
+		//更新楼栋号
+		if($isUpdate){
+			$re4=$model->table('ai_loan_info')->where('buzCode=\''.$paramArr['unique_code'].'\'')->save(array('location'=>$paramArr['location']));
+		}else{
+			$re4=1;
+		}
+		if($re1 && $re2 && $re4){
+			$model->commit();
+			$res=array(
+				'success'=>true,
+				'data'=>'提交数据成功!',
+			);
+		}else{
+			$model->rollback();
+			$res=array(
+				'success'=>false,
+				'data'=>'提交数据失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	//外檐信息
+	public function Eaves(){
+		//接口所需全部参数
+		$paramArr=array(
+			'unique_code'=>'',
+			'structure'=>'',//建筑结构
+			'facade'=>'',//外立面
+			'first_wall'=>'',//首层公共部位装修-墙面
+			'first_ground'=>'',//首层公共部位装修-地面
+			'first_ceiling'=>'',//首层公共部位装修-顶棚
+			'corridor_wall'=>'',//楼道装修-墙面
+			'corridor_ground'=>'',//楼道装修-地面
+			'corridor_ceiling'=>'',//楼道装修-顶棚
+			'elevator_num'=>'',//电梯数量
+			'elevator_duration'=>'',//电梯运营时间
+			'elevator_ladder'=>'',//每层电梯数量
+			'elevator_layern'=>'',//每层户数
+			'addition_living'=>'',//其他
+		);
+		//接口所需全部参数-重估
+		$paramArr_R=array(
+			'unique_code'=>'',
+			'structure'=>'',//建筑结构
+			'facade'=>'',//外立面
+			'first_wall'=>'',//首层公共部位装修-墙面
+			'first_ground'=>'',//首层公共部位装修-地面
+			'first_ceiling'=>'',//首层公共部位装修-顶棚
+			'corridor_wall'=>'',//楼道装修-墙面
+			'corridor_ground'=>'',//楼道装修-地面
+			'corridor_ceiling'=>'',//楼道装修-顶棚
+			'elevator_num'=>'',//电梯数量
+			'elevator_duration'=>'',//电梯运营时间
+			'elevator_ladder'=>'',//每层电梯数量
+			'elevator_layern'=>'',//每层户数
+			'addition_living'=>'',//其他
+		);
+		//接口必选参数
+		if($this->_requestData['usertype']=='bank' && preg_match('/^R/', $this->_requestData['unique_code'])){
+			//检查必选参数
+			$this->checkReqParams($paramArr_R);
+			//获取数据
+			$this->getParams($paramArr_R);
+			$model=M();
+			$re2=$model->table('ai_building_profile_zz')->where("unique_code='%s'",$paramArr['unique_code'])->save($paramArr);
+		}else{
+			//检查必选参数
+			$this->checkReqParams($paramArr);
+			//获取数据
+			$this->getParams($paramArr);
+			$model=M();
+			$re2=$model->table('ai_building_profile_zz')->where("unique_code='%s'",$paramArr['unique_code'])->save($paramArr);
+		}
+
+		if( $re2 ){
+			$model->commit();
+			$res=array(
+				'success'=>true,
+				'data'=>'提交数据成功!',
+			);
+		}else{
+			$model->rollback();
+			$res=array(
+				'success'=>false,
+				'data'=>'提交数据失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	//户内信息
+	public function Cell(){
+		//接口所需全部参数
+		$paramArr=array(
+			'unique_code'=>'',
+			'room'=>'',//室
+			'hall'=>'',//厅
+			'toilet'=>'',//卫生间
+			'kitchen'=>'',//厨房
+			'orientation'=>'',//朝向
+			'lighting'=>'',//采光
+			'through'=>'',//通透
+			'stairs_cover'=>'',//楼梯遮掩
+			'door_material'=>'',//入户门材料
+			'veranda_num'=>'',//阳台数量
+			'semi_num'=>'',//半封闭阳台数
+			'sealing_num'=>'',//封闭阳台数
+			'addition_facility'=>'',//其他
+			'jsonData'=>'',//
+		);
+		//接口所需全部参数-重估
+		$paramArr_R=array(
+			'unique_code'=>'',
+			'room'=>'',//室
+			'hall'=>'',//厅
+			'toilet'=>'',//卫生间
+			'kitchen'=>'',//厨房
+			'orientation'=>'',//朝向
+			'lighting'=>'',//采光
+			'through'=>'',//通透
+			'stairs_cover'=>'',//楼梯遮掩
+			'door_material'=>'',//入户门材料
+			'veranda_num'=>'',//阳台数量
+			'semi_num'=>'',//半封闭阳台数
+			'sealing_num'=>'',//封闭阳台数
+			'addition_facility'=>'',//其他
+			'jsonData'=>'',//
+		);
+		//接口必选参数
+		if($this->_requestData['usertype']=='bank' && preg_match('/^R/', $this->_requestData['unique_code'])){
+			//检查必选参数
+			$this->checkReqParams($paramArr_R);
+			//获取数据
+			$this->getParams($paramArr_R);
+			$model=M();
+			$re2=$model->table('ai_building_profile_zz')->where("unique_code='%s'",$paramArr['unique_code'])->save($paramArr);
+		}else{
+			//检查必选参数
+			$this->checkReqParams($paramArr);
+			//获取数据
+			$this->getParams($paramArr);
+			$model=M();
+			$re2=$model->table('ai_building_profile_zz')->where("unique_code='%s'",$paramArr['unique_code'])->save($paramArr);
+		}
+		//生成室内信息表数据
+		$string=html_entity_decode($paramArr['jsonData']);
+		$indoorData=json_decode($string,true);
+		$indoorData=$indoorData['indoor'];
+		foreach($indoorData as $k=>$v){
+			$indoorData[$k]['unique_code']=$paramArr['unique_code'];
+		}
+		$re3=$model->table('ai_indoor_info_zz')->addAll($indoorData);
+
+		if( $re2 && $re3){
+			$model->commit();
+			$res=array(
+				'success'=>true,
+				'data'=>'提交数据成功!',
+			);
+		}else{
+			$model->rollback();
+			$res=array(
+				'success'=>false,
+				'data'=>'提交数据失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	//新版勘察住宅信息
+	public function addZZnew(){
+		$paramArr=array(
+			'unique_code'=>'',
+			'obj'=>''
+		);
+		$paramArr_R=array(
+			'unique_code'=>'',
+			'obj'=>''
+		);
+		//接口必选参数
+		if($this->_requestData['usertype']=='bank' && preg_match('/^R/', $this->_requestData['unique_code'])){
+			//重估
+			//检查必选参数
+			$this->checkReqParams($paramArr_R);
+			//获取数据
+			$this->getParams($paramArr_R);
+		}else{
+			//检查必选参数
+			$this->checkReqParams($paramArr);
+			//获取数据
+			$this->getParams($paramArr);
+		}
+		$dataPost=json_decode(html_entity_decode($paramArr['obj']),true);
+
+		$model=M();
+		if($this->_requestData['usertype']=='bank' && preg_match('/^R/', $this->_requestData['unique_code'])){
+			//重估,首次勘察信息
+			$surveyInfo=M('RevalTask')->alias('rtask')->join('LEFT JOIN `ai_building_base_info` `base` ON `rtask`.`buzCode`=`base`.`unique_code`')->join('LEFT JOIN `ai_building_profile_zz` `zz` ON `base`.`unique_code`=`zz`.`unique_code`')->where('`rtask`.re_buzCode=\''.$this->_requestData['unique_code'].'\'')->field('base.*,zz.*')->find();
+			//固有信息留用首次勘察结果
+			$paramArr_1st=array(
+				//info_base
+				'province'=>$surveyInfo['province'],
+				'city'=>$surveyInfo['city'],
+				'district'=>$surveyInfo['district'],
+				'usage'=>$surveyInfo['usage'],
+				'area'=>$surveyInfo['area'],
+				//info_ZZ
+				'storey_height'=>$surveyInfo['storey_height'],
+				'building_type'=>$surveyInfo['building_type'],
+				'floors_underground'=>$surveyInfo['floors_underground'],
+				'floors_overground'=>$surveyInfo['floors_overground'],
+				'floor_no'=>$surveyInfo['floor_no'],
+				'build_year'=>$surveyInfo['build_year'],
+				'addition_building'=>$surveyInfo['addition_building'],
+				'structure'=>$surveyInfo['structure'],
+				'room'=>$surveyInfo['room'],
+				'hall'=>$surveyInfo['hall'],
+				'toilet'=>$surveyInfo['toilet'],
+				'kitchen'=>$surveyInfo['kitchen'],
+				'orientation'=>$surveyInfo['orientation'],
+				'veranda_num'=>$surveyInfo['veranda_num'],
+				'semi_num'=>$surveyInfo['semi_num'],
+				'sealing_num'=>$surveyInfo['sealing_num'],
+			);
+			//
+			$baseData['location']=$surveyInfo['location'];
+			//将重估勘察信息重新赋值
+			$paramArr=array_merge($paramArr_1st,$paramArr_R);
+			//重估不更新楼栋号
+			$isUpdate=false;
+		}else{
+			$loanInfo=M('LoanInfo')->where('buzCode=\''.$this->_requestData['unique_code'].'\'')->find();
+			//
+			$baseData['location']=$loanInfo['cell_name'].$paramArr['location'];
+			//合并loaninfo信息
+			$paramArr['province']=$loanInfo['province'];
+			$paramArr['city']=$loanInfo['city'];
+			$paramArr['district']=$loanInfo['district'];
+			$paramArr['usage']=$loanInfo['usage'];
+			//是否更新楼栋号
+			$isUpdate=$loanInfo['location']==$paramArr['location']?false:true;
+		}
+
+// 基本信息
+		$bdata['unique_code'] = $paramArr['unique_code'];
+		$bdata['province'] = $paramArr['province'];
+		$bdata['city'] = $paramArr['city'];
+		$bdata['district'] = $paramArr['district'];
+		$bdata['location'] = $loanInfo['location'];
+		$bdata['usage'] = $paramArr['usage']?:'ZZ';
+		$bdata['area'] = $dataPost['area'];
+		$bdata['surveyCode'] = $dataPost['surveyCode'];
+		$bdata['survey_time']=date('Y-m-d H:i:s');
+// 住宅
+		$zzdata['unique_code'] = $paramArr['unique_code'];
+		$zzdata['storey_height'] = $dataPost['storey_height'];
+		$zzdata['building_type'] = $dataPost['building_type'];
+		$zzdata['service_condition'] = $dataPost['service_condition'];
+		$zzdata['floors_overground'] = $dataPost['floors_overground'];
+		$zzdata['floors_underground'] = $dataPost['floors_underground'];
+		$zzdata['floor_no'] = $dataPost['floor_no'];
+		$zzdata['real_usage'] = $dataPost['real_usage'];
+		$zzdata['frontage'] = $dataPost['frontage'];
+		$zzdata['build_year'] = $dataPost['build_year'];
+		$zzdata['addition_building'] = $dataPost['addition_building'];
+		//外檐信息
+		$zzdata['structure'] = $dataPost['structure'];
+		$zzdata['facade'] = $dataPost['facade'];
+		$zzdata['first_wall'] = $dataPost['first_wall'];
+		$zzdata['first_ground'] = $dataPost['first_ground'];
+		$zzdata['first_ceiling'] = $dataPost['first_ceiling'];
+		$zzdata['corridor_wall'] = $dataPost['corridor_wall'];
+		$zzdata['corridor_ground'] = $dataPost['corridor_ground'];
+		$zzdata['corridor_ceiling'] = $dataPost['corridor_ceiling'];
+		$zzdata['elevator_num'] = $dataPost['elevator_num'];
+		$zzdata['elevator_duration'] = $dataPost['elevator_duration'];
+		$zzdata['elevator_ladder'] = $dataPost['elevator_ladder'];
+		$zzdata['elevator_layern'] = $dataPost['elevator_layern'];
+		$zzdata['addition_living'] = $dataPost['addition_living'];
+		//户内信息
+		$zzdata['room'] = $dataPost['room'];
+		$zzdata['hall'] = $dataPost['hall'];
+		$zzdata['toilet'] = $dataPost['toilet'];
+		$zzdata['kitchen'] = $dataPost['kitchen'];
+		$zzdata['orientation'] = $dataPost['orientation'];
+		$zzdata['lighting'] = $dataPost['lighting'];
+		$zzdata['through'] = $dataPost['through'];
+		$zzdata['stairs_cover'] = $dataPost['stairs_cover'];
+		$zzdata['door_material'] = $dataPost['door_material'];
+		$zzdata['veranda_num'] = $dataPost['veranda_num'];
+		$zzdata['semi_num'] = $dataPost['semi_num'];
+		$zzdata['sealing_num'] = $dataPost['sealing_num'];
+		$zzdata['addition_facility'] = $dataPost['addition_facility'];
+		//小区信息
+		$zzdata['closed_case'] = $dataPost['closed_case'];
+		$zzdata['landscape_green'] = $dataPost['landscape_green'];
+		$zzdata['separation_pv'] = $dataPost['separation_pv'];
+		$zzdata['ground_parking'] = $dataPost['ground_parking'];
+		$zzdata['underground_parking'] = $dataPost['underground_parking'];
+		$zzdata['property_management'] = $dataPost['property_management'];
+		$zzdata['property_fee'] = $dataPost['property_fee'];
+		$zzdata['heating_cost'] = $dataPost['heating_cost'];
+		$model->startTrans();//开启事务
+		$count = M('BuildingBaseInfo')->where("unique_code='%s'",$paramArr['unique_code'])->count();
+		if($count){
+			//修改
+			$re1 = $model->table('ai_building_base_info')->where("unique_code='%s'",$paramArr['unique_code'])->save($bdata);
+			$re2 = $model->table('ai_building_profile_zz')->where("unique_code='%s'",$paramArr['unique_code'])->save($zzdata);
+			$re3 = $model->table('ai_indoor_info_zz')->where("unique_code='%s'",$paramArr['unique_code'])->delete();//delete
+			$re4 = $model->table('ai_indoor_info_zz')->addAll($dataPost['jsonData']);//add
+			if( $re1 || $re2 || ($re3 && $re4)){
+				$model->commit();
+				$res=array(
+					'success'=>true,
+					'msg'=>'修改数据成功!',
+				);
+			}else{
+				$model->rollback();
+				$res=array(
+					'success'=>false,
+					'msg'=>'修改数据失败!',
+				);
+			}
+		}else{
+			//添加
+			$re1 = $model->table('ai_building_base_info')->add($bdata);
+			$re2 = $model->table('ai_building_profile_zz')->add($zzdata);
+			$re3 = $model->table('ai_indoor_info_zz')->addAll($dataPost['jsonData']);
+			if($re1 && $re2 && $re3){
+				$model->commit();
+				$res=array(
+					'success'=>true,
+					'msg'=>'提交数据成功!',
+				);
+			}else{
+				$model->rollback();
+				$res=array(
+					'success'=>false,
+					'msg'=>'提交数据失败!',
+				);
+			}
+		}
+
+		echo json_encode($res);exit;
+
+	}
+	/**
+	 * 上传住宅信息
+	 */
+	public function addZZ(){
+		//接口所需全部参数
+		$paramArr=array(
+			//info_base
+			'surveyCode'=>'',//勘察编号
+// 			'survey_time'=>'',
+			'unique_code'=>'',
+// 			'province'=>'',
+// 			'city'=>'',
+// 			'district'=>'',
+			'location'=>'',//楼栋号
+// 			'usage'=>'',
+			'area'=>'',
+			//info_ZZ
+			'storey_height'=>'',
+			'building_type'=>'',
+			'service_condition'=>'',
+			'floors_underground'=>'',
+			'floors_overground'=>'',
+			'floor_no'=>'',
+			'real_usage'=>'',
+			'frontage'=>'',
+			'build_year'=>'',
+			'addition_building'=>'',
+			'structure'=>'',
+			'facade'=>'',
+			'first_wall'=>'',
+			'first_ground'=>'',
+			'first_ceiling'=>'',
+			'corridor_wall'=>'',
+			'corridor_ground'=>'',
+			'corridor_ceiling'=>'',
+			'elevator_num'=>'',
+			'elevator_duration'=>'',
+			'elevator_ladder'=>'',
+			'elevator_layern'=>'',
+			'addition_living'=>'',
+			'room'=>'',
+			'hall'=>'',
+			'toilet'=>'',
+			'kitchen'=>'',
+			'orientation'=>'',
+			'lighting'=>'',
+			'through'=>'',
+			'stairs_cover'=>'',
+			'door_material'=>'',
+			'veranda_num'=>'',
+			'semi_num'=>'',
+			'sealing_num'=>'',
+			'addition_facility'=>'',
+			'closed_case'=>'',
+			'landscape_green'=>'',
+			'separation_pv'=>'',
+			'ground_parking'=>'',
+			'underground_parking'=>'',
+			'property_management'=>'',
+			'property_fee'=>'',
+			'heating_cost'=>'',
+			//indoor_info_ZZ
+			'jsonData'=>'',
+		);
+		//接口所需全部参数-重估
+		$paramArr_R=array(
+			//info_base
+			'surveyCode'=>'',//勘察编号
+// 			'survey_time'=>'',
+			'unique_code'=>'',
+// 			'province'=>'',
+// 			'city'=>'',
+// 			'district'=>'',
+			'location'=>'',//楼栋号
+// 			'usage'=>'',
+			//info_ZZ
+			'service_condition'=>'',
+			'real_usage'=>'',
+			'frontage'=>'',
+			'facade'=>'',
+			'first_wall'=>'',
+			'first_ground'=>'',
+			'first_ceiling'=>'',
+			'corridor_wall'=>'',
+			'corridor_ground'=>'',
+			'corridor_ceiling'=>'',
+			'elevator_num'=>'',
+			'elevator_duration'=>'',
+			'elevator_ladder'=>'',
+			'elevator_layern'=>'',
+			'addition_living'=>'',
+			'lighting'=>'',
+			'through'=>'',
+			'stairs_cover'=>'',
+			'door_material'=>'',
+			'addition_facility'=>'',
+			'closed_case'=>'',
+			'landscape_green'=>'',
+			'separation_pv'=>'',
+			'ground_parking'=>'',
+			'underground_parking'=>'',
+			'property_management'=>'',
+			'property_fee'=>'',
+			'heating_cost'=>'',
+			//indoor_info_ZZ
+			'jsonData'=>'',
+		);
+		//接口可选参数
+		$paramArr2=array(
+			'addition_building'=>'',
+			'addition_living'=>'',
+			'addition_facility'=>'',
+		);
+		//接口必选参数
+		if($this->_requestData['usertype']=='bank' && preg_match('/^R/', $this->_requestData['unique_code'])){
+			//重估
+			$reqParams=array_diff_key($paramArr_R, $paramArr2);
+			//检查必选参数
+			$this->checkReqParams($reqParams);
+			//获取数据
+			$this->getParams($paramArr_R);
+		}else{
+			$reqParams=array_diff_key($paramArr, $paramArr2);
+			//检查必选参数
+			$this->checkReqParams($reqParams);
+			//获取数据
+			$this->getParams($paramArr);
+		}
+		
+		$model=M();
+		//生成基本信息表数据
+		$baseData=array();
+		if($this->_requestData['usertype']=='bank' && preg_match('/^R/', $this->_requestData['unique_code'])){
+			//重估,首次勘察信息
+			$surveyInfo=M('RevalTask')->alias('rtask')->join('LEFT JOIN `ai_building_base_info` `base` ON `rtask`.`buzCode`=`base`.`unique_code`')->join('LEFT JOIN `ai_building_profile_zz` `zz` ON `base`.`unique_code`=`zz`.`unique_code`')->where('`rtask`.re_buzCode=\''.$this->_requestData['unique_code'].'\'')->field('base.*,zz.*')->find();
+			//固有信息留用首次勘察结果
+			$paramArr_1st=array(
+				//info_base
+				'province'=>$surveyInfo['province'],
+				'city'=>$surveyInfo['city'],
+				'district'=>$surveyInfo['district'],
+				'usage'=>$surveyInfo['usage'],
+				'area'=>$surveyInfo['area'],
+				//info_ZZ
+				'storey_height'=>$surveyInfo['storey_height'],
+				'building_type'=>$surveyInfo['building_type'],
+				'floors_underground'=>$surveyInfo['floors_underground'],
+				'floors_overground'=>$surveyInfo['floors_overground'],
+				'floor_no'=>$surveyInfo['floor_no'],
+				'build_year'=>$surveyInfo['build_year'],
+				'addition_building'=>$surveyInfo['addition_building'],
+				'structure'=>$surveyInfo['structure'],
+				'room'=>$surveyInfo['room'],
+				'hall'=>$surveyInfo['hall'],
+				'toilet'=>$surveyInfo['toilet'],
+				'kitchen'=>$surveyInfo['kitchen'],
+				'orientation'=>$surveyInfo['orientation'],
+				'veranda_num'=>$surveyInfo['veranda_num'],
+				'semi_num'=>$surveyInfo['semi_num'],
+				'sealing_num'=>$surveyInfo['sealing_num'],
+			);
+			//
+			$baseData['location']=$surveyInfo['location'];
+			//将重估勘察信息重新赋值
+			$paramArr=array_merge($paramArr_1st,$paramArr_R);
+			//重估不更新楼栋号
+			$isUpdate=false;
+		}else{
+			$loanInfo=M('LoanInfo')->where('buzCode=\''.$this->_requestData['unique_code'].'\'')->find();
+			//
+			$baseData['location']=$loanInfo['cell_name'].$paramArr['location'];
+			//合并loaninfo信息
+			$paramArr['province']=$loanInfo['province'];
+			$paramArr['city']=$loanInfo['city'];
+			$paramArr['district']=$loanInfo['district'];
+			$paramArr['usage']=$loanInfo['usage'];
+			//是否更新楼栋号
+			$isUpdate=$loanInfo['location']==$paramArr['location']?false:true;
+		}
+		//基本信息
+		$baseData['surveyCode']=$paramArr['surveyCode'];
+		$baseData['unique_code']=$paramArr['unique_code'];
+		$baseData['province']=$paramArr['province'];
+		$baseData['city']=$paramArr['city'];
+		$baseData['district']=$paramArr['district'];
+		$baseData['usage']=$paramArr['usage'];
+		$baseData['area']=$paramArr['area'];
+		//生成住宅信息表数据
+		$extData=array_diff_key($paramArr, $baseData);
+		unset($extData['jsonData']);
+		unset($extData['location']);
+		$extData['unique_code']=$paramArr['unique_code'];
+		//生成室内信息表数据
+		$string=html_entity_decode($paramArr['jsonData']);
+		$indoorData=json_decode($string,true);
+		$indoorData=$indoorData['indoor'];
+		foreach($indoorData as $k=>$v){
+			$indoorData[$k]['unique_code']=$paramArr['unique_code'];
+		}
+		
+		$model->startTrans();//开启事务
+
+		$re1=$model->table('ai_building_base_info')->data($baseData)->add();
+		$re2=$model->table('ai_building_profile_zz')->data($extData)->add();
+		$re3=$model->table('ai_indoor_info_zz')->addAll($indoorData);
+		//更新楼栋号
+		if($isUpdate){
+			$re4=$model->table('ai_loan_info')->where('buzCode=\''.$paramArr['unique_code'].'\'')->save(array('location'=>$paramArr['location']));
+		}else{
+			$re4=1;
+		}
+		
+		if($re1 && $re2 && $re3 && $re4){
+			$model->commit();
+			$res=array(
+				'success'=>true,
+				'data'=>'提交数据成功!',
+			);
+		}else{
+			$model->rollback();
+			$res=array(
+				'success'=>false,
+				'data'=>'提交数据失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 修改住宅信息
+	 */
+	public function editZZ(){
+		//接口所需全部参数
+		$paramArr=array(
+			//info_base
+// 			'surveyCode'=>'',//勘察编号
+// 			'survey_time'=>'',
+			'unique_code'=>'',
+// 			'province'=>'',
+// 			'city'=>'',
+// 			'district'=>'',
+// 			'location'=>'',
+// 			'usage'=>'',
+			'area'=>'',
+			//info_ZZ
+			'storey_height'=>'',
+			'building_type'=>'',
+			'service_condition'=>'',
+			'floors_underground'=>'',
+			'floors_overground'=>'',
+			'floor_no'=>'',
+			'real_usage'=>'',
+			'frontage'=>'',
+			'build_year'=>'',
+			'addition_building'=>'',
+			'structure'=>'',
+			'facade'=>'',
+			'first_wall'=>'',
+			'first_ground'=>'',
+			'first_ceiling'=>'',
+			'corridor_wall'=>'',
+			'corridor_ground'=>'',
+			'corridor_ceiling'=>'',
+			'elevator_num'=>'',
+			'elevator_duration'=>'',
+			'elevator_ladder'=>'',
+			'elevator_layern'=>'',
+			'addition_living'=>'',
+			'room'=>'',
+			'hall'=>'',
+			'toilet'=>'',
+			'kitchen'=>'',
+			'orientation'=>'',
+			'lighting'=>'',
+			'through'=>'',
+			'stairs_cover'=>'',
+			'door_material'=>'',
+			'veranda_num'=>'',
+			'semi_num'=>'',
+			'sealing_num'=>'',
+			'addition_facility'=>'',
+			'closed_case'=>'',
+			'landscape_green'=>'',
+			'separation_pv'=>'',
+			'ground_parking'=>'',
+			'underground_parking'=>'',
+			'property_management'=>'',
+			'property_fee'=>'',
+			'heating_cost'=>'',
+			//indoor_info_ZZ
+			'jsonData'=>'',
+		);
+		//获取数据
+		$this->getParams($paramArr);
+		
+		$model=M();
+		//生成基本信息表数据
+		$baseData=array();
+		if($this->_requestData['usertype']=='bank' && preg_match('/^R/', $this->_requestData['unique_code'])){
+			//重估
+			//固有信息留用首次勘察结果,不作修改
+			$paramArr_1st=array(
+				//info_base
+				'area'=>'',
+				//info_ZZ
+				'storey_height'=>'',
+				'building_type'=>'',
+				'floors_underground'=>'',
+				'floors_overground'=>'',
+				'floor_no'=>'',
+				'build_year'=>'',
+				'addition_building'=>'',
+				'structure'=>'',
+				'room'=>'',
+				'hall'=>'',
+				'toilet'=>'',
+				'kitchen'=>'',
+				'orientation'=>'',
+				'veranda_num'=>'',
+				'semi_num'=>'',
+				'sealing_num'=>'',
+			);
+			$paramArr=array_diff_key($paramArr, $paramArr_1st);
+		}else{
+			$baseData['unique_code']=$paramArr['unique_code'];
+			$baseData['location']=$paramArr['location'];
+			$baseData['area']=$paramArr['area'];
+		}
+		
+		//生成住宅信息表数据
+		$extData=array_diff_key($paramArr, $baseData);
+		unset($extData['jsonData']);
+		$extData['unique_code']=$paramArr['unique_code'];
+		//生成室内信息表数据
+		$string=html_entity_decode($paramArr['jsonData']);
+		$indoorData=json_decode($string,true);
+		$indoorData=$indoorData['indoor'];
+		foreach($indoorData as $k=>$v){
+			$indoorData[$k]['unique_code']=$paramArr['unique_code'];
+		}
+		$model->startTrans();//开启事务
+		$condition=array('unique_code'=>$paramArr['unique_code']);
+		$re1=$model->table('ai_building_base_info')->where($condition)->save($baseData);
+		$re2=$model->table('ai_building_profile_zz')->where($condition)->save($extData);
+		$re3=$model->table('ai_indoor_info_zz')->where($condition)->delete();//delete
+		$re4=$model->table('ai_indoor_info_zz')->addAll($indoorData);//add
+		if($re1 || $re2 || ($re3 && $re4)){
+			$model->commit();
+			$res=array(
+				'success'=>true,
+				'data'=>'修改数据成功!',
+			);
+		}else{
+			$model->rollback();
+			$res=array(
+				'success'=>false,
+				'data'=>'修改数据失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 获取住宅信息
+	 */
+	public function getZZ(){
+		//接口所需参数
+		$paramArr=array(
+			'unique_code'=>'',//唯一编码(业务编码)
+		);
+		//检查必须参数
+		$this->checkReqParams($paramArr);
+		//获取数据
+		$this->getParams($paramArr);
+		//住宅信息
+		$model=M();
+		$info=$model->table('ai_building_base_info')->alias('base')->join('ai_building_profile_zz profile ON `base`.`unique_code`=`profile`.`unique_code`')->where('`base`.`unique_code`=\''.$paramArr['unique_code'].'\'')->find();
+		//户内信息
+		$indoorInfo=$model->table('ai_indoor_info_zz')->where($paramArr)->order('indoor_type,id')->select();
+		$tmpArr=array();
+		foreach($indoorInfo as $v){
+			$tmpArr[$v['indoor_type']][]=$v;
+		}
+		$indoorJsonData=$tmpArr;
+		//输出数据
+		if($info && $indoorInfo){
+			$exportData=array(
+				'success'=>true,
+				'msg'=>'成功',
+				'data'=>array(
+					//info_base
+					'surveyCode'=>$info['surveyCode'],//勘察编号
+					'survey_time'=>$info['survey_time']?:'',
+					'unique_code'=>$info['unique_code'],
+					'province'=>$info['province'],
+					'city'=>$info['city'],
+					'district'=>$info['district'],
+					'location'=>$info['location'],
+					'usage'=>C('USAGE')[$info['usage']],
+					'area'=>$info['area'],
+					//info_ZZ
+					'storey_height'=>$info['storey_height'],
+					'building_type'=>$info['building_type'],
+					'service_condition'=>$info['service_condition'],
+					'floors_underground'=>$info['floors_underground'],
+					'floors_overground'=>$info['floors_overground'],
+					'floor_no'=>$info['floor_no'],
+					'real_usage'=>$info['real_usage'],
+					'frontage'=>$info['frontage'],
+					'build_year'=>$info['build_year'],
+					'addition_building'=>$info['addition_building'],
+					'structure'=>$info['structure'],
+					'facade'=>$info['facade'],
+					'first_wall'=>$info['first_wall'],
+					'first_ground'=>$info['first_ground'],
+					'first_ceiling'=>$info['first_ceiling'],
+					'corridor_wall'=>$info['corridor_wall'],
+					'corridor_ground'=>$info['corridor_ground'],
+					'corridor_ceiling'=>$info['corridor_ceiling'],
+					'elevator_num'=>$info['elevator_num'],
+					'elevator_duration'=>$info['elevator_duration'],
+					'elevator_ladder'=>$info['elevator_ladder'],
+					'elevator_layern'=>$info['elevator_layern'],
+					'addition_living'=>$info['addition_living'],
+					'room'=>$info['room'],
+					'hall'=>$info['hall'],
+					'toilet'=>$info['toilet'],
+					'kitchen'=>$info['kitchen'],
+// 			'orientation'=>C('ORIENTATION')[$info['orientation']],
+					'orientation'=>$info['orientation'],
+					'lighting'=>$info['lighting'],
+					'through'=>$info['through'],
+					'stairs_cover'=>$info['stairs_cover'],
+					'door_material'=>$info['door_material'],
+					'veranda_num'=>$info['veranda_num'],
+					'semi_num'=>$info['semi_num'],
+					'sealing_num'=>$info['sealing_num'],
+					'addition_facility'=>$info['addition_facility'],
+					'closed_case'=>$info['closed_case'],
+					'landscape_green'=>$info['landscape_green'],
+					'separation_pv'=>$info['separation_pv'],
+					'ground_parking'=>$info['ground_parking'],
+					'underground_parking'=>$info['underground_parking'],
+					'property_management'=>$info['property_management'],
+					'property_fee'=>$info['property_fee'],
+					'heating_cost'=>$info['heating_cost'],
+					//indoor_info_ZZ
+					'jsonData'=>$indoorJsonData,
+				),
+			);
+		}else{
+			$exportData=array(
+				'success'=>false,
+				'msg'=>'失败',
+				'data'=>'',
+			);
+		}
+		echo json_encode($exportData);exit;
+	}
+	
+	/**
+	 * 上传写字楼信息
+	 */
+	public function addBG(){
+		//接口所需参数
+		$paramArr=array(
+			//info_base
+			'surveyCode'=>'',//勘察编号
+// 			'survey_time'=>'',
+			'unique_code'=>'',
+// 			'province'=>'',
+// 			'city'=>'',
+// 			'district'=>'',
+// 			'location'=>'',
+// 			'usage'=>'',
+			'area'=>'',
+			//info_BG
+			'storey_height'=>'',
+			'service_condition'=>'',
+			'floors_underground'=>'',
+			'floors_overground'=>'',
+			'floor_no'=>'',
+			'real_usage'=>'',
+			'frontage'=>'',
+			'build_year'=>'',
+			'addition_building'=>'',
+			'structure'=>'',
+			'facade'=>'',
+			'first_wall'=>'',
+			'first_ground'=>'',
+			'first_ceiling'=>'',
+			'corridor_wall'=>'',
+			'corridor_ground'=>'',
+			'corridor_ceiling'=>'',
+			'elevator_num'=>'',
+			'elevator_duration'=>'',
+			'elevator_ladder'=>'',
+			'elevator_layern'=>'',
+			'closed_case'=>'',
+			'landscape_green'=>'',
+			'separation_pv'=>'',
+			'ground_parking'=>'',
+			'underground_parking'=>'',
+			'property_management'=>'',
+			'property_fee'=>'',
+			'heating_cost'=>'',
+		);
+		//接口可选参数
+		$paramArr2=array(
+			'addition_building'=>'',
+		);
+		//接口必选参数
+		$reqParams=array_diff_key($paramArr, $paramArr2);
+		//检查必选参数
+		$this->checkReqParams($reqParams);
+		//获取数据
+		$this->getParams($paramArr);
+		
+		$model=M();
+		//生成基本信息表数据
+		$baseData=array();
+		$baseData['surveyCode']=$paramArr['surveyCode'];
+// 		$baseData['survey_time']=$paramArr['survey_time'];
+		$baseData['unique_code']=$paramArr['unique_code'];
+// 		$baseData['province']=$paramArr['province'];
+// 		$baseData['city']=$paramArr['city'];
+// 		$baseData['district']=$paramArr['district'];
+// 		$baseData['location']=$paramArr['location'];
+// 		$baseData['usage']=$paramArr['usage'];
+		if(preg_match('/^R/', $paramArr['unique_code'])){
+			$loanInfo=M('RevalTask')->alias('rtask')->join('LEFT JOIN `ai_loan_info` `info` ON `rtask`.`buzCode`=`info`.`buzCode`')->where('`rtask`.re_buzCode=\''.$paramArr['unique_code'].'\'')->field('info.*')->find();
+		}else{
+			$loanInfo=M('LoanInfo')->where('buzCode=\''.$paramArr['unique_code'].'\'')->find();
+		}
+		$baseData['province']=$loanInfo['province'];
+		$baseData['city']=$loanInfo['city'];
+		$baseData['district']=$loanInfo['district'];
+		$baseData['location']=$loanInfo['cell_name'].$loanInfo['location'];
+		$baseData['usage']=$loanInfo['usage'];
+		$baseData['area']=$paramArr['area'];
+		//生成写字楼信息表数据
+		$extData=array_diff_key($paramArr, $baseData);
+		$extData['unique_code']=$paramArr['unique_code'];
+		
+		$model->startTrans();
+		$re1=$model->table('ai_building_base_info')->data($baseData)->add();
+		$re2=$model->table('ai_building_profile_bg')->data($extData)->add();
+		
+		if($re1 && $re2){
+			$model->commit();
+			$res=array(
+				'success'=>true,
+				'data'=>'提交数据成功!',
+			);
+		}else{
+			$model->rollback();
+			$res=array(
+				'success'=>false,
+				'data'=>'提交数据失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 修改写字楼信息
+	 */
+	public function editBG(){
+		//接口所需参数
+		$paramArr=array(
+			//info_base
+// 			'surveyCode'=>'',//勘察编号
+// 			'survey_time'=>'',
+			'unique_code'=>'',
+// 			'province'=>'',
+// 			'city'=>'',
+// 			'district'=>'',
+// 			'location'=>'',
+// 			'usage'=>'',
+			'area'=>'',
+			//info_BG
+			'storey_height'=>'',
+			'service_condition'=>'',
+			'floors_underground'=>'',
+			'floors_overground'=>'',
+			'floor_no'=>'',
+			'real_usage'=>'',
+			'frontage'=>'',
+			'build_year'=>'',
+			'addition_building'=>'',
+			'structure'=>'',
+			'facade'=>'',
+			'first_wall'=>'',
+			'first_ground'=>'',
+			'first_ceiling'=>'',
+			'corridor_wall'=>'',
+			'corridor_ground'=>'',
+			'corridor_ceiling'=>'',
+			'elevator_num'=>'',
+			'elevator_duration'=>'',
+			'elevator_ladder'=>'',
+			'elevator_layern'=>'',
+			'closed_case'=>'',
+			'landscape_green'=>'',
+			'separation_pv'=>'',
+			'ground_parking'=>'',
+			'underground_parking'=>'',
+			'property_management'=>'',
+			'property_fee'=>'',
+			'heating_cost'=>'',
+		);
+		//获取数据
+		$this->getParams($paramArr);
+		
+		$model=M();
+		//生成基本信息表数据
+		$baseData=array();
+// 		$baseData['surveyCode']=$paramArr['surveyCode'];
+// 		$baseData['survey_time']=$paramArr['survey_time'];
+		$baseData['unique_code']=$paramArr['unique_code'];
+// 		$baseData['province']=$paramArr['province'];
+// 		$baseData['city']=$paramArr['city'];
+// 		$baseData['district']=$paramArr['district'];
+// 		$baseData['location']=$paramArr['location'];
+// 		$baseData['usage']=$paramArr['usage'];
+		$baseData['area']=$paramArr['area'];
+		//生成写字楼信息表数据
+		$extData=array_diff_key($paramArr, $baseData);
+		$extData['unique_code']=$paramArr['unique_code'];
+		
+		$model->startTrans();
+		$condition=array('unique_code'=>$paramArr['unique_code']);
+		$re1=$model->table('ai_building_base_info')->where($condition)->save($baseData);
+		$re2=$model->table('ai_building_profile_bg')->where($condition)->save($extData);
+		
+		if($re1 || $re2){
+			$model->commit();
+			$res=array(
+				'success'=>true,
+				'data'=>'修改数据成功!',
+			);
+		}else{
+			$model->rollback();
+			$res=array(
+				'success'=>false,
+				'data'=>'修改数据失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 获取写字楼信息
+	 */
+	public function getBG(){
+		//接口所需参数
+		$paramArr=array(
+			'unique_code'=>'',//唯一编码(业务编码)
+		);
+		//检查必须参数
+		$this->checkReqParams($paramArr);
+		//获取数据
+		$this->getParams($paramArr);
+		//写字楼信息
+		$model=M();
+		$info=$model->table('ai_building_base_info')->alias('base')->join('ai_building_profile_bg profile ON `base`.`unique_code`=`profile`.`unique_code`')->where('`base`.`unique_code`=\''.$paramArr['unique_code'].'\'')->find();
+		//附加建筑信息
+		$addition_building=explode(',', $info['addition_building']);
+		$tmp_building='';
+		foreach($addition_building as $v){
+			$tmp_building.=C('ADDITION_BUILDING')[$v].',';
+		}
+		$tmp_building=rtrim($tmp_building,',');
+		$info['addition_building']=$tmp_building;
+		//输出数据
+		$exportData=array(
+			//info_base
+			'surveyCode'=>$info['surveyCode'],//勘察编号
+			'survey_time'=>$info['survey_time']?:'',
+			'unique_code'=>$info['unique_code'],
+			'province'=>$info['province'],
+			'city'=>$info['city'],
+			'district'=>$info['district'],
+			'location'=>$info['location'],
+			'usage'=>C('USAGE')[$info['usage']],
+			'area'=>$info['area'],
+			//info_BG
+			'storey_height'=>$info['storey_height'],
+			'service_condition'=>$info['service_condition'],
+			'floors_underground'=>$info['floors_underground'],
+			'floors_overground'=>$info['floors_overground'],
+			'floor_no'=>$info['floor_no'],
+			'real_usage'=>$info['real_usage'],
+			'frontage'=>$info['frontage'],
+			'build_year'=>$info['build_year'],
+			'addition_building'=>$info['addition_building'],
+			'structure'=>$info['structure'],
+			'facade'=>$info['facade'],
+			'first_wall'=>$info['first_wall'],
+			'first_ground'=>$info['first_ground'],
+			'first_ceiling'=>$info['first_ceiling'],
+			'corridor_wall'=>$info['corridor_wall'],
+			'corridor_ground'=>$info['corridor_ground'],
+			'corridor_ceiling'=>$info['corridor_ceiling'],
+			'elevator_num'=>$info['elevator_num'],
+			'elevator_duration'=>$info['elevator_duration'],
+			'elevator_ladder'=>$info['elevator_ladder'],
+			'elevator_layern'=>$info['elevator_layern'],
+			'closed_case'=>$info['closed_case'],
+			'landscape_green'=>$info['landscape_green'],
+			'separation_pv'=>$info['separation_pv'],
+			'ground_parking'=>$info['ground_parking'],
+			'underground_parking'=>$info['underground_parking'],
+			'property_management'=>$info['property_management'],
+			'property_fee'=>$info['property_fee'],
+			'heating_cost'=>$info['heating_cost'],
+		);
+		echo json_encode($exportData);exit;
+	}
+	
+	/**
+	 * 上传商业建筑信息
+	 */
+	public function addSY(){
+		//接口所需参数
+		$paramArr=array(
+			//info_base
+			'surveyCode'=>'',//勘察编号
+// 			'survey_time'=>'',
+			'unique_code'=>'',
+// 			'province'=>'',
+// 			'city'=>'',
+// 			'district'=>'',
+// 			'location'=>'',
+// 			'usage'=>'',
+			'area'=>'',
+			//info_SY
+			'storey_height'=>'',
+			'business_type'=>'',
+			'service_condition'=>'',
+			'floors_underground'=>'',
+			'floors_overground'=>'',
+			'floor_no'=>'',
+			'is_near_stairs'=>'',
+			'frontage'=>'',
+			'build_year'=>'',
+			'decoration'=>'',
+			'separation_pv'=>'',
+			'ground_parking'=>'',
+			'underground_parking'=>'',
+			'property_management'=>'',
+			'property_fee'=>'',
+			'heating_cost'=>'',
+		);
+		//接口可选参数
+		$paramArr2=array(
+		);
+		//接口必选参数
+		$reqParams=array_diff_key($paramArr, $paramArr2);
+		//检查必选参数
+		$this->checkReqParams($reqParams);
+		//获取数据
+		$this->getParams($paramArr);
+		
+		$model=M();
+		//生成基本信息表数据
+		$baseData=array();
+		$baseData['surveyCode']=$paramArr['surveyCode'];
+// 		$baseData['survey_time']=$paramArr['survey_time'];
+		$baseData['unique_code']=$paramArr['unique_code'];
+// 		$baseData['province']=$paramArr['province'];
+// 		$baseData['city']=$paramArr['city'];
+// 		$baseData['district']=$paramArr['district'];
+// 		$baseData['location']=$paramArr['location'];
+// 		$baseData['usage']=$paramArr['usage'];
+		if(preg_match('/^R/', $paramArr['unique_code'])){
+			$loanInfo=M('RevalTask')->alias('rtask')->join('LEFT JOIN `ai_loan_info` `info` ON `rtask`.`buzCode`=`info`.`buzCode`')->where('`rtask`.re_buzCode=\''.$paramArr['unique_code'].'\'')->field('info.*')->find();
+		}else{
+			$loanInfo=M('LoanInfo')->where('buzCode=\''.$paramArr['unique_code'].'\'')->find();
+		}
+		$baseData['province']=$loanInfo['province'];
+		$baseData['city']=$loanInfo['city'];
+		$baseData['district']=$loanInfo['district'];
+		$baseData['location']=$loanInfo['cell_name'].$loanInfo['location'];
+		$baseData['usage']=$loanInfo['usage'];
+		$baseData['area']=$paramArr['area'];
+		//生成写字楼信息表数据
+		$extData=array_diff_key($paramArr, $baseData);
+		$extData['unique_code']=$paramArr['unique_code'];
+		
+		$model->startTrans();
+		$re1=$model->table('ai_building_base_info')->data($baseData)->add();
+		$re2=$model->table('ai_building_profile_sy')->data($extData)->add();
+
+		if($re1 && $re2){
+			$model->commit();
+			$res=array(
+				'success'=>true,
+				'data'=>'提交数据成功!',
+			);
+		}else{
+			$model->rollback();
+			$res=array(
+				'success'=>false,
+				'data'=>'提交数据失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 修改商业建筑信息
+	 */
+	public function editSY(){
+		//接口所需参数
+		$paramArr=array(
+			//info_base
+// 			'surveyCode'=>'',//勘察编号
+// 			'survey_time'=>'',
+			'unique_code'=>'',
+// 			'province'=>'',
+// 			'city'=>'',
+// 			'district'=>'',
+// 			'location'=>'',
+// 			'usage'=>'',
+			'area'=>'',
+			//info_SY
+			'storey_height'=>'',
+			'business_type'=>'',
+			'service_condition'=>'',
+			'floors_underground'=>'',
+			'floors_overground'=>'',
+			'floor_no'=>'',
+			'is_near_stairs'=>'',
+			'frontage'=>'',
+			'build_year'=>'',
+			'decoration'=>'',
+			'separation_pv'=>'',
+			'ground_parking'=>'',
+			'underground_parking'=>'',
+			'property_management'=>'',
+			'property_fee'=>'',
+			'heating_cost'=>'',
+		);
+		//获取数据
+		$this->getParams($paramArr);
+		
+		$model=M();
+		//生成基本信息表数据
+		$baseData=array();
+// 		$baseData['surveyCode']=$paramArr['surveyCode'];
+// 		$baseData['survey_time']=$paramArr['survey_time'];
+		$baseData['unique_code']=$paramArr['unique_code'];
+// 		$baseData['province']=$paramArr['province'];
+// 		$baseData['city']=$paramArr['city'];
+// 		$baseData['district']=$paramArr['district'];
+// 		$baseData['location']=$paramArr['location'];
+// 		$baseData['usage']=$paramArr['usage'];
+		$baseData['area']=$paramArr['area'];
+		//生成写字楼信息表数据
+		$extData=array_diff_key($paramArr, $baseData);
+		$extData['unique_code']=$paramArr['unique_code'];
+		
+		$model->startTrans();
+		$condition=array('unique_code'=>$paramArr['unique_code']);
+		$re1=$model->table('ai_building_base_info')->where($condition)->save($baseData);
+		$re2=$model->table('ai_building_profile_sy')->where($condition)->save($extData);
+		
+		if($re1 || $re2){
+			$model->commit();
+			$res=array(
+				'success'=>true,
+				'data'=>'修改数据成功!',
+			);
+		}else{
+			$model->rollback();
+			$res=array(
+				'success'=>false,
+				'data'=>'修改数据失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 获取商业建筑信息
+	 */
+	public function getSY(){
+		//接口所需参数
+		$paramArr=array(
+			'unique_code'=>'',//唯一编码(业务编码)
+		);
+		//检查必须参数
+		$this->checkReqParams($paramArr);
+		//获取数据
+		$this->getParams($paramArr);
+		//写字楼信息
+		$model=M();
+		$info=$model->table('ai_building_base_info')->alias('base')->join('ai_building_profile_sy profile ON `base`.`unique_code`=`profile`.`unique_code`')->where('`base`.`unique_code`=\''.$paramArr['unique_code'].'\'')->find();
+		//输出数据
+		$exportData=array(
+			//info_base
+			'surveyCode'=>$info['surveyCode'],//勘察编号
+			'survey_time'=>$info['survey_time']?:'',
+			'unique_code'=>$info['unique_code'],
+			'province'=>$info['province'],
+			'city'=>$info['city'],
+			'district'=>$info['district'],
+			'location'=>$info['location'],
+			'usage'=>C('USAGE')[$info['usage']],
+			'area'=>$info['area'],
+			//info_SY
+			'storey_height'=>$info['storey_height'],
+			'business_type'=>$info['business_type'],
+			'service_condition'=>$info['service_condition'],
+			'floors_underground'=>$info['floors_underground'],
+			'floors_overground'=>$info['floors_overground'],
+			'floor_no'=>$info['floor_no'],
+			'is_near_stairs'=>$info['is_near_stairs'],
+			'frontage'=>$info['frontage'],
+			'build_year'=>$info['build_year'],
+			'decoration'=>$info['decoration'],
+			'separation_pv'=>$info['separation_pv'],
+			'ground_parking'=>$info['ground_parking'],
+			'underground_parking'=>$info['underground_parking'],
+			'property_management'=>$info['property_management'],
+			'property_fee'=>$info['property_fee'],
+			'heating_cost'=>$info['heating_cost'],
+		);
+		echo json_encode($exportData);exit;
+	}
+	
+	/**
+	 * 待完成
+	 * 
+	 * 上传工业建筑信息
+	 */
+	public function addGY(){
+		//接口所需参数
+		$paramArr=array(
+			//info_base
+			'surveyCode'=>'',//勘察编号
+// 			'survey_time'=>'',
+			'unique_code'=>'',
+// 			'province'=>'',
+// 			'city'=>'',
+// 			'district'=>'',
+// 			'location'=>'',
+			'usage'=>'',
+			'area'=>'',
+			//info_GY
+			'jsonData'=>'',
+		);
+		//接口可选参数
+		$paramArr2=array(
+		);
+		//接口必选参数
+		$reqParams=array_diff_key($paramArr, $paramArr2);
+		//检查必选参数
+		$this->checkReqParams($reqParams);
+		//获取数据
+		$this->getParams($paramArr);
+		
+		$model=M();
+		//生成基本信息表数据
+		$baseData=array();
+		$baseData['surveyCode']=$paramArr['surveyCode'];
+// 		$baseData['survey_time']=$paramArr['survey_time'];
+		$baseData['unique_code']=$paramArr['unique_code'];
+// 		$baseData['province']=$paramArr['province'];
+// 		$baseData['city']=$paramArr['city'];
+// 		$baseData['district']=$paramArr['district'];
+// 		$baseData['location']=$paramArr['location'];
+// 		$baseData['usage']=$paramArr['usage'];
+		if(preg_match('/^R/', $paramArr['unique_code'])){
+			$loanInfo=M('RevalTask')->alias('rtask')->join('LEFT JOIN `ai_loan_info` `info` ON `rtask`.`buzCode`=`info`.`buzCode`')->where('`rtask`.re_buzCode=\''.$paramArr['unique_code'].'\'')->field('info.*')->find();
+		}else{
+			$loanInfo=M('LoanInfo')->where('buzCode=\''.$paramArr['unique_code'].'\'')->find();
+		}
+		$baseData['province']=$loanInfo['province'];
+		$baseData['city']=$loanInfo['city'];
+		$baseData['district']=$loanInfo['district'];
+		$baseData['location']=$loanInfo['cell_name'].$loanInfo['location'];
+		$baseData['usage']=$loanInfo['usage'];
+		$baseData['area']=$paramArr['area'];
+		//生成工业信息表数据
+		$string=html_entity_decode($paramArr['jsonData']);
+		$extData=json_decode($string,true);
+		$extData=$extData['gylist'];
+		foreach($extData as $k=>$v){
+			$extData[$k]['unique_code']=$paramArr['unique_code'];
+		}
+		
+		$model->startTrans();
+		$re1=$model->table('ai_building_base_info')->data($baseData)->add();
+		$re2=$model->table('ai_building_profile_gy')->addAll($extData);
+		
+		if($re1 && $re2){
+			$model->commit();
+			$res=array(
+				'success'=>true,
+				'data'=>'提交数据成功!',
+			);
+		}else{
+			$model->rollback();
+			$res=array(
+				'success'=>false,
+				'data'=>'提交数据失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 修改工业建筑信息
+	 */
+	public function editGY(){
+		//接口所需参数
+		$paramArr=array(
+			//info_base
+// 			'surveyCode'=>'',//勘察编号
+// 			'survey_time'=>'',
+			'unique_code'=>'',
+// 			'province'=>'',
+// 			'city'=>'',
+// 			'district'=>'',
+// 			'location'=>'',
+// 			'usage'=>'',
+			'area'=>'',
+			//info_GY
+			'jsonData'=>'',
+		);
+		//获取数据
+		$this->getParams($paramArr);
+		
+		$model=M();
+		//生成基本信息表数据
+		$baseData=array();
+// 		$baseData['surveyCode']=$paramArr['surveyCode'];
+// 		$baseData['survey_time']=$paramArr['survey_time'];
+		$baseData['unique_code']=$paramArr['unique_code'];
+// 		$baseData['province']=$paramArr['province'];
+// 		$baseData['city']=$paramArr['city'];
+// 		$baseData['district']=$paramArr['district'];
+// 		$baseData['location']=$paramArr['location'];
+// 		$baseData['usage']=$paramArr['usage'];
+		$baseData['area']=$paramArr['area'];
+		//生成工业信息表数据
+		$string=html_entity_decode($paramArr['jsonData']);
+		$extData=json_decode($string,true);
+		$extData=$extData['gylist'];
+		foreach($extData as $k=>$v){
+			$extData[$k]['unique_code']=$paramArr['unique_code'];
+		}
+		
+		$model->startTrans();
+		$condition=array('unique_code'=>$paramArr['unique_code']);
+		$re1=$model->table('ai_building_base_info')->where($condition)->save($baseData);
+		$re2=$model->table('ai_building_profile_gy')->where($condition)->delete();//add
+		$re3=$model->table('ai_building_profile_gy')->addAll($extData);//add
+		
+		if($re1 || ($re2 && $re3)){
+			$model->commit();
+			$res=array(
+				'success'=>true,
+				'data'=>'修改数据成功!',
+			);
+		}else{
+			$model->rollback();
+			$res=array(
+				'success'=>false,
+				'data'=>'修改数据失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 获取工业建筑信息
+	 */
+	public function getGY(){
+		//接口所需参数
+		$paramArr=array(
+			'unique_code'=>'',//唯一编码(业务编码)
+		);
+		//检查必须参数
+		$this->checkReqParams($paramArr);
+		//获取数据
+		$this->getParams($paramArr);
+		//基本信息
+		$model=M();
+		$info=$model->table('ai_building_base_info')->where('`unique_code`=\''.$paramArr['unique_code'].'\'')->find();
+		//工业建筑信息
+		$gyData=$model->table('ai_building_profile_gy')->where('`unique_code`=\''.$paramArr['unique_code'].'\'')->order('`id`')->select();
+// 		$gyJsonData=json_encode($gyData);
+		$gyJsonData=$gyData;
+		//输出数据
+		$exportData=array(
+			//info_base
+			'surveyCode'=>$info['surveyCode'],//勘察编号
+			'survey_time'=>$info['survey_time']?:'',
+			'unique_code'=>$info['unique_code'],
+			'province'=>$info['province'],
+			'city'=>$info['city'],
+			'district'=>$info['district'],
+			'location'=>$info['location'],
+			'usage'=>C('USAGE')[$info['usage']],
+			'area'=>$info['area'],
+			//info_GY
+			'jsonData'=>$gyJsonData,
+		);
+		echo json_encode($exportData);exit;
+	}
+	
+	/**
+	 * 上传图片
+	 */
+	public function uploadImg(){
+		//接口所需参数
+		$paramArr=array(
+			'unique_code'=>'',//唯一编码(业务编码)
+		);
+		//检查必须参数
+		$this->checkReqParams($paramArr);
+		//获取数据
+		$this->getParams($paramArr);
+		
+		$curMonth=date('Y-m');
+		// 上传文件处理
+		$config = array(
+			'savePath' => '/mobile/',
+			'saveName' => array('uniqid',''),
+			'exts' => array('jpg','gif','png','jpeg'),
+			'autoSub' => true,
+			'subName' => $curMonth,
+		);
+		
+		$upload=new Upload($config);
+		$info=$upload->upload();
+		$this->thumb($info);//裁剪上传图片
+		
+		$tmp=ltrim($paramArr['unique_code'],'R');
+		$usage=substr($tmp, 8,2);
+		$pic_categoryArr=require_once	APP_PATH.'Api/Conf/pic_category_'.$usage.'.php';
+		$pic_category=$pic_categoryArr['all'];
+		
+		$dataList=array();//新添加照片信息
+		foreach ($info as $v){
+			list($title)=explode('.', $v['name']);
+			$dataList[]=array(
+				'unique_code'=>$paramArr['unique_code'],
+				'title'=>strtr($title, $pic_category),
+				'cate'=>preg_replace('/\d+/', '', $title),
+				'picture'=>$v['savepath'].$v['savename'],
+			);
+		}
+<<<<<<< .mine
+=======
+// 		print_r($dataList);die;
+>>>>>>> .r1367
+		$model=M('SurveyPicture');
+		if($model->addAll($dataList)){
+			$res=array(
+				'success'=>true,
+				'msg'=>'上传成功!',
+			);
+		}else{
+			$res=array(
+				'success'=>false,
+				'msg'=>'上传失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 查看上传照片
+	 */
+	public function viewImg(){
+		//接口所需参数
+		$paramArr=array(
+			'unique_code'=>'',//唯一编码(业务编码)
+		);
+		//检查必须参数
+		$this->checkReqParams($paramArr);
+		//获取数据
+		$this->getParams($paramArr);
+		//图片列表
+		$picList=M('SurveyPicture')->where($paramArr)->order('cate,id')->select();
+		$httpHost=I('server.HTTP_HOST');
+		$rootPath='/Uploads/';
+		foreach($picList as $k=>$v){
+			$picList[$k]['picture']=$httpHost.$rootPath.$picList[$k]['picture'];
+		}
+		echo json_encode($picList,true);
+	}
+	
+	/**
+	 * 删除上传照片
+	 */
+	public function delImg(){
+		//接口所需参数
+		$paramArr=array(
+			'unique_code'=>'',//唯一编码(业务编码)
+			'id'=>'',
+		);
+		//检查必须参数
+		$this->checkReqParams($paramArr);
+		//获取数据
+		$this->getParams($paramArr);
+		//获取删除图片地址
+		$picInfo=M('SurveyPicture')->where($paramArr)->find();
+		$rootPath='./Uploads/';
+		$delPicUrl=$rootPath.$picInfo['picture'];
+		//删除图片
+		$model=M('SurveyPicture');
+		if($model->where($paramArr)->delete()){
+			unlink($delPicUrl);
+			
+			$res=array(
+				'success'=>true,
+				'data'=>'删除成功!',
+			);
+		}else{
+			$res=array(
+				'success'=>false,
+				'data'=>'删除失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 获取上传照片数量
+	 */
+	public function getPictureNum(){
+		//接口所需参数
+		$paramArr=array(
+			'unique_code'=>'',//唯一编码(业务编码)
+		);
+		//检查必须参数
+		$this->checkReqParams($paramArr);
+		//获取数据
+		$this->getParams($paramArr);
+		//获取照片数量
+		$model=M('SurveyPicture');
+		$res=$model->where('unique_code="%s"',$paramArr['unique_code'])->field('title,count(cate) num')->group('cate')->select();
+		//获取上传照片类型
+		$cateArr=$this->getPictureCateByCode($paramArr['unique_code'])['all'];
+		$pictureNum=array_combine(array_values($cateArr), array_fill(0, count($cateArr),'0'));
+		foreach($res as $v){
+			$pictureNum[$v['title']]=$v['num'];
+		}
+		echo json_encode($pictureNum);
+	}
+	
+	/**
+	 * 勘察任务确认接口
+	 */
+	public function surveyConfirm(){
+		//接口所需参数
+		$paramArr=array(
+			'unique_code'=>'',//唯一编码(业务编码)
+		);
+		//检查必须参数
+		$this->checkReqParams($paramArr);
+		//获取数据
+		$this->getParams($paramArr);
+		
+		$flag=true;
+		//判断建筑信息是否提交
+		if(!$this->getBuildingInfo($paramArr['unique_code'])){
+			//未提交
+			$flag=false;
+			$res=array(
+				'success'=>false,
+				'data'=>'建筑物信息未上传!',
+			);
+		}
+		/* //判断照片是否上传
+		$re=$this->getPictureInfo($paramArr['unique_code']);
+		if($flag){
+			if($re===FALSE){
+				$flag=false;
+				$res=array(
+					'success'=>false,
+					'data'=>'照片未上传!',
+				);
+			}elseif(is_string($re) && !empty($re)){
+				$flag=false;
+				$res=array(
+					'success'=>false,
+					'data'=>$re,
+				);
+			}
+		} */
+		if($flag){
+			if(preg_match('/^R/', $paramArr['unique_code'])){
+				$data=array(
+					'status'=>'32',
+					'survey_time'=>date('Y-m-d H:i:s'),
+				);
+				$table="RevalTask";
+				$where="re_buzCode='{$paramArr['unique_code']}'";
+			}else{
+				$data=array(
+					'status'=>'31',
+					'survey_time'=>date('Y-m-d H:i:s'),
+				);
+				$table="Task";
+				$where="buzCode='{$paramArr['unique_code']}'";
+			}
+			if(M($table)->where($where)->setField($data)){
+				$res=array(
+					'success'=>true,
+					'data'=>'勘察信息确认成功!',
+				);
+			}else{
+				$res=array(
+					'success'=>false,
+					'data'=>'勘察信息确认失败!',
+				);
+			}
+		}
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 提交项目调查结果接口
+	 */
+	public function submitSurveyItem(){
+	    //接口所需全部参数
+	    $paramArr=array(
+	        'unique_code'=>'',//唯一编码(业务编码)
+	        'result'=>'',//array格式,[项目id=>['choice'=>'','content'=>'']]
+	    );
+	    //检查必须参数
+	    $this->checkReqParams($paramArr);
+	    //获取数据
+	    $this->getParams($paramArr);
+	    //保存数据
+ 	    $tmpData=$paramArr['result'];
+	    foreach ($tmpData as $k=>$v){
+            $surveyData[]=array(
+                'buzCode'=>$paramArr['unique_code'],
+                'item_id'=>$k,
+                'result'=>$v['choice'],
+                'content'=>$v['choice']=='0'?'':$v['content'],
+            );
+	    }
+	    $model=M('BankSurveyResult');
+	    if($model->addAll($surveyData)){
+			$res=array(
+				'success'=>true,
+				'data'=>'提交数据成功!',
+			);
+		}else{
+			$res=array(
+				'success'=>false,
+				'data'=>'提交数据失败!',
+			);
+		}
+		echo json_encode($res);exit;
+	}
+	
+	/**
+	 * 获取银行内评调查结果
+	 */
+	public function getSurveyResult(){
+		//接口所需全部参数
+		$paramArr=array(
+			'unique_code'=>'',//唯一编码(业务编码)
+		);
+		//检查必须参数
+		$this->checkReqParams($paramArr);
+		//获取数据
+		$this->getParams($paramArr);
+		//获取调查结果
+		$model=M();
+		$sql="SELECT `item`.`id`,`item`.`content`,`res`.`result`,`res`.`content` `feedback` FROM (SELECT * FROM `ai_bank_survey_result` WHERE `buzCode`='{$paramArr['unique_code']}') `res` LEFT JOIN `ai_bank_survey_item` item ON `res`.`item_id`=`item`.`id`";
+		$res=$model->query($sql);
+		//没有调查结果
+		if(empty($res)){
+			$re=array(
+					'success'=>false,
+					'data'=>'还没有提交调查结果！',
+			);
+			echo json_encode($re);exit;
+		}
+		//有调查结果
+		$surveyResults=array();
+		foreach ($res as $v){
+			$surveyResults[$v['id']]=array(
+					'item'=>$v['content'],
+					'result'=>$v['result'],
+					'feedback'=>$v['feedback'],
+			);
+		}
+		//输出
+		$re=array(
+				'success'=>true,
+				'data'=>$surveyResults,
+		);
+		echo json_encode($re);
+	}
+	
+	/**
+	 * 从post参数中获取接口参数
+	 * @param array $paramArr
+	 */
+	protected function getParams(&$paramArr){
+		foreach($paramArr as $k=>$v){
+			$paramArr[$k]=$this->_requestData[$k];
+		}
+	}
+	
+	/**
+	 * 检查必须参数是否存在
+	 * @param array $regParams 必选参数
+	 */
+	protected function checkReqParams($regParams){
+		foreach($regParams as $k=>$v){
+			if(is_null($this->_requestData[$k]) || $this->_requestData[$k]==''){
+				$res=array(
+					'success'=>false,
+					'data'=>'参数'.$k.'不能为空!',
+				);
+				echo json_encode($res);exit;
+			}
+		}
+	}
+	
+	/**
+	 * 判断建筑信息是否上传
+	 * @param string $unique_code
+	 */
+	protected function getBuildingInfo($unique_code){
+		$model=M('BuildingBaseInfo');
+		if($model->where('unique_code=\''.$unique_code.'\'')->count()){
+			//已上传
+			return true;
+		}else{
+			//未上传
+			return false;
+		}
+	}
+	
+	/**
+	 * 判断照片信息是否上传
+	 * @param string $unique_code
+	 */
+	protected function getPictureInfo($unique_code){
+		$model=M('SurveyPicture');
+		//房屋用途
+		$tmp=ltrim($unique_code,'R');
+		$usage=substr($tmp, 8,2);
+		//获取照片分类
+		$pic_categoryArr=require_once	APP_PATH.'Api/Conf/pic_category_'.$usage.'.php';
+		$pic_category=array_diff_key($pic_categoryArr['all'], $pic_categoryArr['opt']);
+		$pics=$model->where("unique_code='{$unique_code}'")->group('cate')->select();
+		if(is_array($pics) && !empty($pics)){
+			$err='';
+			$arr=array();
+			foreach($pics as $v){
+				$arr[]=$v['cate'];
+			}
+			foreach($pic_category as $k=>$v){
+				if(!in_array($k, $arr)){
+					$err="{$v}还没有上传照片!";
+					break;
+				}
+			}
+			if(!$err){
+				//已全部上传
+				return true;
+			}else{
+				//部分未上传
+				return $err;
+			}
+		}else{
+			//尚未上传
+			return false;
+		}
+	}
+	
+	/**
+	 * 获取用户角色(评估机构)
+	 */
+	protected function getUserInfoById($id){
+		return M('AssessUser')->alias('user')->join('LEFT JOIN `ai_assess_role` `role` ON `user`.`role_id`=`role`.`id`')->where('`user`.`id`='.$id)->field('`user`.`assess_id`,`role`.`eName` ')->find();
+	}
+	
+	/**
+	 * 获取银行用户角色
+	 */
+	protected function getBankUserInfoById($id){
+		return M('BankUser')->alias('user')->join('LEFT JOIN `ai_bank_role` `role` ON `user`.`role_id`=`role`.`id`')->where('`user`.`id`='.$id)->field('`user`.`bank_id`,`role`.`eName` ')->find();
+	}
+	
+	/**
+	 * 上传文件裁剪
+	 * @param array $uploads 上传文件信息
+	 * @param string $width 宽
+	 * @param string $height 高
+	 * @param string $quality 质量
+	 */
+	protected function thumb($uploads,$width='537',$height='525',$quality='99'){
+		if(empty($uploads) || !is_array($uploads)){
+			exit;
+		}
+		$imgArr=array();
+		$rootPath='./Uploads/';
+		foreach ($uploads as $v){
+			if(!is_array($v)) continue;
+			$imgArr[]=$rootPath.$v['savepath'].$v['savename'];
+		}
+		$img=new Image();
+		foreach ($imgArr as $v){
+			$img->open($v);
+			$img->thumb($width, $height)->save($v,null,$quality);
+		}
+	}
+	
+	/**
+	 * 获取物业类型
+	 * @param string $uniqcode
+	 * @return string
+	 */
+	protected function getPropertyType($unique_code){
+		$code=ltrim($unique_code,'R');
+		$type=substr($code,8,2);
+		return $type;
+	}
+	
+	/**
+	 * 根据业务编码获取上传照片分类
+	 * @param string $unique_code
+	 * @return array
+	 */
+	protected function getPictureCateByCode($unique_code){
+		$type=$this->getPropertyType($unique_code);
+		$cateArr=require_once APP_PATH.'Api/Conf/pic_category_'.$type.'.php';
+		return $cateArr;
+	}
+	
+	/**
+	 * 根据物业类型获取上传照片分类
+	 * @param string $type
+	 * @return array
+	 */
+	protected function getPictureCateByPropertyType($type){
+		$cateArr=require_once APP_PATH.'Api/Conf/pic_category_'.$type.'.php';
+		return $cateArr;
+	}
+
+	/*
+	 * 发送短信验证码
+	 */
+	
+	public function sendVerifySMS(){
+	    //接口所需参数
+	    $paramArr=array(
+	        'tel'=>''
+	    );
+	    //var_dump($paramArr);
+	    $this->getParams($paramArr);
+	    $model=M();
+	    //var_dump($sql);
+	    //var_dump($dataList[0]['tel']);
+	    $to = $paramArr['tel'];
+	    $verCode = $this->generate_code();
+	    //var_dump($verCode);
+	    $find ="select * from 	dsj_verify_code where user_name='{$paramArr['username']}'";
+	    $findData = $model->query($find);
+	    $verifyCode=M('VerifyCode');
+	    if(empty($findData)){
+	        //echo "123";
+	        $verifyData = array(
+	            'user_name'=>$to,
+	            'verCode'=>$verCode,
+	            'verTel'=>$to,
+	            'time'=>date('Y-m-d H:i:s'),  
+	        );
+	        $verifyCode->data( $verifyData )->add();
+	    }else{
+	        $oldTime=date("Y-m-d", strtotime($findData[0]['time']));
+	        $newTime=date("Y-m-d");
+	        $dayCount = $oldTime==$newTime?$findData[0]['dayCount']:0;
+	        $verifyData = array(
+	            'verCode'=>$verCode,
+	            'verTel'=>$to,
+	            'time'=>date('Y-m-d H:i:s'),
+	            'dayCount'=>++$dayCount,
+	            'allCount'=>++$findData[0]['allCount'],
+	        );
+	        $verifyCode->where('user_name="%s"',$to)->data( $verifyData )->save();
+	    }
+	   // $to = '13391604556';  //13391604556
+	    $datas = array($verCode,'2');
+	    $tempId = 1;
+	    sendTemplateSMS($to,$datas,$tempId);
+	}
+	/*
+	 * 随机生成手机验证码
+	 */
+	protected function generate_code($length = 6) {
+	    return rand(pow(10,($length-1)), pow(10,$length)-1);
+	}
+	
+}
+
+?>
